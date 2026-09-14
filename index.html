@@ -1,27 +1,18 @@
-<!DOCTYPE html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JdB - Overschrijven</title><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script><style>body{font-family:system-ui;padding:16px;max-width:620px;margin:auto}input,button,textarea{font-size:18px;padding:14px;width:100%;margin-top:10px;border-radius:10px;border:1px solid #ccc}button{font-weight:700}pre{background:#f4f4f4;padding:14px;white-space:pre-wrap;border-radius:10px}canvas{max-width:100%;display:none}</style></head><body>
-<h2>JdB 1-140 - overschrijft 1 file</h2>
-<button id="login" style="background:#0078d4;color:#fff">1. Login OneDrive (1x)</button><div id="stat" style="font-size:13px;color:#666">Niet ingelogd</div>
-<input type="file" accept="image/*" capture="environment" id="foto"><canvas id="prev"></canvas><textarea id="hand" rows="4"></textarea><button id="bereken" style="background:#000;color:#fff">Bereken</button><pre id="out">Wachten...</pre><button id="save" style="display:none;background:#107c10;color:#fff">2. Overschrijf OneDrive txt file</button>
+<!DOCTYPE html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JdB Final Auto</title><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><style>body{font-family:system-ui;padding:16px;max-width:620px;margin:auto}input,button,textarea{font-size:18px;padding:14px;width:100%;margin-top:10px;border-radius:10px;border:1px solid #ccc}button{font-weight:700;cursor:pointer}pre{background:#f4f4f4;padding:14px;white-space:pre-wrap;border-radius:10px}canvas{max-width:100%;display:none}#tip{font-size:13px;color:#666}</style></head><body>
+<h2>JdB 1-140 - auto save versie</h2><div id="tip">Foto -> Bereken -> Open bestand</div>
+<input type="file" accept="image/*" capture="environment" id="foto"><canvas id="prev"></canvas><textarea id="hand" rows="4" placeholder="Gelezen cijfers"></textarea>
+<button id="bereken" style="background:#000;color:#fff">Bereken ontbrekende</button><pre id="out">Wachten...</pre>
+<button id="save" style="display:none;background:#107c10;color:#fff">Open & overschrijf OneDrive file</button>
 <script>
-const SHARE_URL="https://1drv.ms/t/c/aded5003e7acf3bd/IQDioy1-KCCeS6xsjOj4obR9Af6FJk9JFKoc7QURwsXfI_Y?e=J43Qi3";
-const msalConfig={auth:{clientId:"14d82eec-204b-4c2f-b7e8-296a70dab67e",authority:"https://login.microsoftonline.com/common"},cache:{cacheLocation:"localStorage"}};
-const msalClient=new msal.PublicClientApplication(msalConfig);
-let laatste="", account=null;
-const out=document.getElementById('out'),hand=document.getElementById('hand'),canvas=document.getElementById('prev'),stat=document.getElementById('stat');
+const FILE_URL="https://1drv.ms/t/c/aded5003e7acf3bd/IQDioy1-KCCeS6xsjOj4obR9Af6FJk9JFKoc7QURwsXfI_Y?e=J43Qi3";
+let laatste=""; const out=document.getElementById('out'),hand=document.getElementById('hand'),canvas=document.getElementById('prev');
 async function prep(f){const img=new Image();img.src=URL.createObjectURL(f);await new Promise(r=>img.onload=r);const s=2.8;canvas.width=img.width*s;canvas.height=img.height*s;canvas.style.display='block';const c=canvas.getContext('2d');c.drawImage(img,0,0,canvas.width,canvas.height);let d=c.getImageData(0,0,canvas.width,canvas.height);for(let i=0;i<d.data.length;i+=4){let v=0.34*d.data[i]+0.5*d.data[i+1]+0.16*d.data[i+2];v=v>150?255:0;d.data[i]=d.data[i+1]=d.data[i+2]=v;}c.putImageData(d,0,0);return canvas;}
-async function bereken(txt){const gev=[...new Set((txt.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);const alle=Array.from({length:140},(_,i)=>i+1);const miss=alle.filter(n=>!gev.includes(n));laatste=`JdB 1-140 - ${new Date().toLocaleString('nl-NL')}\nOntbrekend (${miss.length}):\n`+miss.join('\n');out.textContent=laatste;document.getElementById('save').style.display=account?'block':'none';}
+async function bereken(txt){const gev=[...new Set((txt.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);const alle=Array.from({length:140},(_,i)=>i+1);const miss=alle.filter(n=>!gev.includes(n));laatste=`JdB 1-140 - ${new Date().toLocaleString('nl-NL')}\nOntbrekend (${miss.length}):\n`+miss.join('\n');try{await navigator.clipboard.writeText(laatste);}catch{} out.textContent=laatste+"\n\n✓ gekopieerd naar klembord";document.getElementById('save').style.display='block';}
 document.getElementById('foto').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;out.textContent="⏳ Lezen...";const c=await prep(f);const {data:{text}}=await Tesseract.recognize(c,'eng',{tessedit_char_whitelist:'0123456789, \n',psm:6});hand.value=text;await bereken(text);});
 document.getElementById('bereken').onclick=()=>bereken(hand.value);
-document.getElementById('login').onclick=async()=>{try{const res=await msalClient.loginPopup({scopes:["Files.ReadWrite","Files.ReadWrite.All"]});account=res.account;stat.textContent="Ingelogd als "+account.username;document.getElementById('save').style.display=laatste?'block':'none';}catch(e){stat.textContent="Login fout: "+e.message;}};
 document.getElementById('save').onclick=async()=>{
- try{
-  const token=(await msalClient.acquireTokenSilent({scopes:["Files.ReadWrite"],account})).accessToken;
-  const b64=btoa(SHARE_URL).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); const shareId="u!"+b64;
-  const meta=await fetch(`https://graph.microsoft.com/v1.0/shares/${shareId}/driveItem`,{headers:{Authorization:"Bearer "+token}}).then(r=>r.json());
-  const id=meta.id;
-  await fetch(`https://graph.microsoft.com/v1.0/drives/${meta.parentReference.driveId}/items/${id}/content`,{method:"PUT",headers:{Authorization:"Bearer "+token,"Content-Type":"text/plain"},body:laatste});
-  alert("Overschreven! ✓\n"+meta.name);
- }catch(e){ alert("Fout: "+e.message+"\nProbeer opnieuw in te loggen"); console.error(e);}
+  try{await navigator.clipboard.writeText(laatste);}catch{}
+  window.open(FILE_URL,'_blank');
+  out.textContent+= "\n\n>>> NU IN ONEDRIVE:\n1. Ctrl+A (alles selecteren)\n2. Ctrl+V (plakken)\n3. Klaar - OneDrive slaat zelf automatisch op";
 };
-(async()=>{const accs=msalClient.getAllAccounts();if(accs[0]){account=accs[0];stat.textContent="Ingelogd als "+account.username;}})();
 </script></body></html>
