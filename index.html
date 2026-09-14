@@ -1,1 +1,90 @@
-<!DOCTYPE html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JdB 1-140 v3</title><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><style>body{font-family:system-ui;padding:20px;max-width:600px;margin:auto}input,button,textarea{font-size:18px;padding:14px;width:100%;margin-top:10px;border-radius:10px;border:1px solid #ccc;box-sizing:border-box}button{font-weight:600}pre{background:#f4f4f4;padding:15px;white-space:pre-wrap;border-radius:10px}canvas{max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:10px}</style></head><body><h2>JdB 1-140 - verbeterde herkenning</h2><input type="file" accept="image/*" capture="environment" id="foto"><canvas id="prev"></canvas><textarea id="hand" rows="5" placeholder="Gelezen cijfers... controleer even"></textarea><button id="bereken" style="background:#000;color:#fff;border:0">Bereken ontbrekende</button><pre id="out">Wachten op foto...</pre><button id="kiesmap" style="background:#ffcc00;border:0">Kies OneDrive map</button><button id="save" style="display:none;background:#007aff;color:#fff;border:0">Opslaan in OneDrive map</button><script>let laatste="",dirHandle=null;async function preprocess(file){const img=new Image();img.src=URL.createObjectURL(file);await new Promise(r=>img.onload=r);const c=document.getElementById('prev');const s=2.5;c.width=img.width*s;c.height=img.height*s;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,c.width,c.height);let d=ctx.getImageData(0,0,c.width,c.height);for(let i=0;i<d.data.length;i+=4){let v=0.34*d.data[i]+0.5*d.data[i+1]+0.16*d.data[i+2];v=v>145?255:0;d.data[i]=d.data[i+1]=d.data[i+2]=v;}ctx.putImageData(d,0,0);return c;}async function berekenUitTekst(txt){const gevonden=[...new Set((txt.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);const alle=Array.from({length:140},(_,i)=>i+1);const miss=alle.filter(n=>!gevonden.includes(n));laatste=miss.join('\n');try{await navigator.clipboard.writeText(laatste);}catch{}document.getElementById('out').textContent=`GEVONDEN ${gevonden.length}: ${gevonden.join(', ')}\n\nONTBREKEND ${miss.length}:\n${laatste}`;if(dirHandle)document.getElementById('save').style.display='block';}document.getElementById('foto').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;document.getElementById('out').textContent="⏳ Bewerken + lezen (betere modus)...";const canvas=await preprocess(f);const {data:{text}}=await Tesseract.recognize(canvas,'eng',{tessedit_char_whitelist:'0123456789, \n',psm:6});document.getElementById('hand').value=text;await berekenUitTekst(text);});document.getElementById('bereken').onclick=()=>berekenUitTekst(document.getElementById('hand').value);document.getElementById('kiesmap').onclick=async()=>{try{dirHandle=await window.showDirectoryPicker();document.getElementById('save').style.display='block';}catch{}};document.getElementById('save').onclick=async()=>{const naam=`JdB-${new Date().toISOString().slice(0,10)}.txt`;const fh=await dirHandle.getFileHandle(naam,{create:true});const w=await fh.createWritable();await w.write(laatste);await w.close();alert("Opgeslagen: "+naam);};</script></body></html>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JdB 1-140 v3 PRO</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+body{font-family:system-ui;padding:16px;max-width:620px;margin:auto}
+input,button,textarea{font-size:18px;padding:14px;width:100%;margin-top:10px;border-radius:10px;border:1px solid #ccc;box-sizing:border-box}
+button{font-weight:700;cursor:pointer}
+pre{background:#f4f4f4;padding:14px;white-space:pre-wrap;border-radius:10px;min-height:80px}
+canvas{max-width:100%;border-radius:8px;margin-top:10px;display:none}
+#status{font-size:13px;color:#666}
+</style>
+</head>
+<body>
+<h2>JdB 1-140 - PRO herkenning</h2>
+<div id="status">Tip: veel licht, recht boven papier, donkere ondergrond</div>
+<input type="file" accept="image/*" capture="environment" id="foto">
+<canvas id="prev"></canvas>
+<textarea id="hand" rows="5" placeholder="Gelezen cijfers verschijnen hier - controleer en pas aan indien nodig"></textarea>
+<button id="bereken" style="background:#000;color:#fff;border:0">Bereken ontbrekende</button>
+<pre id="out">Wachten op foto...</pre>
+<button id="kiesmap" style="background:#ffcc00;border:0">1. Kies OneDrive map jdb/@Sarel/mix ma-wo</button>
+<button id="save" style="display:none;background:#007aff;color:#fff;border:0">2. Opslaan direct in die map</button>
+<button id="mail" style="display:none;background:#111;color:#fff;border:0">Mail resultaat</button>
+<script>
+let laatste="", dirHandle=null;
+const out=document.getElementById('out'), hand=document.getElementById('hand'), canvas=document.getElementById('prev'), statusEl=document.getElementById('status');
+
+async function preprocess(file){
+  const img=new Image(); img.src=URL.createObjectURL(file);
+  await new Promise(r=>img.onload=r);
+  const scale=2.8;
+  canvas.width=img.width*scale; canvas.height=img.height*scale;
+  canvas.style.display='block';
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  let d=ctx.getImageData(0,0,canvas.width,canvas.height);
+  for(let i=0;i<d.data.length;i+=4){
+    let v=0.2126*d.data[i]+0.7152*d.data[i+1]+0.0722*d.data[i+2];
+    v=v>150?255:0;
+    d.data[i]=d.data[i+1]=d.data[i+2]=v;
+  }
+  ctx.putImageData(d,0,0);
+  return canvas;
+}
+async function berekenUitTekst(txt){
+  const gevonden=[...new Set((txt.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);
+  const alle=Array.from({length:140},(_,i)=>i+1);
+  const miss=alle.filter(n=>!gevonden.includes(n));
+  laatste=miss.join('\n');
+  try{await navigator.clipboard.writeText(laatste);}catch{}
+  out.textContent=`GEVONDEN (${gevonden.length}): ${gevonden.join(', ')}\n\nONTBREKEND (${miss.length}):\n${laatste}\n\n-> gekopieerd naar klembord`;
+  if(dirHandle) document.getElementById('save').style.display='block';
+  document.getElementById('mail').style.display='block';
+}
+document.getElementById('foto').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  out.textContent="⏳ Bewerken + lezen met cijfer-filter...";
+  const c=await preprocess(f);
+  try{
+    const {data:{text}}=await Tesseract.recognize(c,'eng',{tessedit_char_whitelist:'0123456789, \n', tessedit_pageseg_mode:'6'});
+    hand.value=text; await berekenUitTekst(text);
+    statusEl.textContent=`Gelezen: ${text.match(/\d+/g)?.length||0} cijfers gevonden`;
+  }catch(err){ out.textContent="Leesfout: "+err.message; }
+});
+document.getElementById('bereken').onclick=()=>berekenUitTekst(hand.value);
+document.getElementById('kiesmap').onclick=async()=>{
+  try{
+    dirHandle=await window.showDirectoryPicker();
+    statusEl.textContent="Map gekozen: "+dirHandle.name+" ✓";
+    if(laatste) document.getElementById('save').style.display='block';
+  }catch{ statusEl.textContent="Geen map gekozen"; }
+};
+document.getElementById('save').onclick=async()=>{
+  if(!dirHandle){alert("Kies eerst map met gele knop"); return;}
+  const naam=`JdB-ontbrekend-${new Date().toISOString().slice(0,10)}.txt`;
+  const inhoud=`JdB 1-140 - ${new Date().toLocaleString('nl-NL')}\nMap: jdb/@Sarel/mix ma-wo\n\n${laatste}\n`;
+  try{
+    const fh=await dirHandle.getFileHandle(naam,{create:true});
+    const w=await fh.createWritable(); await w.write(inhoud); await w.close();
+    alert("Opgeslagen als "+naam+" in "+dirHandle.name);
+  }catch(e){ alert("Kon niet direct opslaan: "+e.message+"\nHij downloadt nu."); const b=new Blob([inhoud],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=naam; a.click(); }
+};
+document.getElementById('mail').onclick=()=>location.href=`mailto:?subject=JdB ontbrekend&body=${encodeURIComponent(laatste)}`;
+</script>
+</body>
+</html>
