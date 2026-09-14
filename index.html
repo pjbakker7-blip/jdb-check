@@ -1,18 +1,481 @@
-<!DOCTYPE html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JdB Final Auto</title><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><style>body{font-family:system-ui;padding:16px;max-width:620px;margin:auto}input,button,textarea{font-size:18px;padding:14px;width:100%;margin-top:10px;border-radius:10px;border:1px solid #ccc}button{font-weight:700;cursor:pointer}pre{background:#f4f4f4;padding:14px;white-space:pre-wrap;border-radius:10px}canvas{max-width:100%;display:none}#tip{font-size:13px;color:#666}</style></head><body>
-<h2>JdB 1-140 - auto save versie</h2><div id="tip">Foto -> Bereken -> Open bestand</div>
-<input type="file" accept="image/*" capture="environment" id="foto"><canvas id="prev"></canvas><textarea id="hand" rows="4" placeholder="Gelezen cijfers"></textarea>
-<button id="bereken" style="background:#000;color:#fff">Bereken ontbrekende</button><pre id="out">Wachten...</pre>
-<button id="save" style="display:none;background:#107c10;color:#fff">Open & overschrijf OneDrive file</button>
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>JdB 1-140 – groene cirkel OCR</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
+<script src="https://js.live.net/v7.2/OneDrive.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,Arial,sans-serif;margin:0;padding:14px;background:#f4f4f4;color:#111}
+main{max-width:760px;margin:auto}
+h2{margin:3px 0 6px}
+.tip{font-size:14px;color:#555;line-height:1.4}
+button,input{width:100%;font-size:18px;padding:14px;margin-top:9px;border-radius:11px;border:1px solid #aaa}
+button{font-weight:700;border:0}
+.black{background:#111;color:#fff}
+.green{background:#107c10;color:#fff}
+.blue{background:#1565c0;color:#fff}
+.orange{background:#e67e00;color:#fff}
+#status,#result,#found,#debug{background:#fff;border-radius:11px;padding:12px;margin-top:12px}
+#result{font-size:23px;font-weight:700;line-height:1.55}
+#found{font-size:16px;line-height:1.6}
+#foto{background:#fff}
+canvas{max-width:100%;height:auto;border-radius:10px;margin-top:12px}
+textarea{width:100%;font-size:17px;padding:10px;border-radius:10px;border:1px solid #aaa;margin-top:10px;min-height:105px}
+.hidden{display:none}
+.small{font-size:13px;color:#666;font-weight:400}
+#map{font-weight:700}
+hr{border:0;border-top:1px solid #ddd;margin:15px 0}
+</style>
+</head>
+
+<body>
+<main>
+<h2>JdB 1–140</h2>
+<div class="tip">
+Maak een foto van het echte bord. De app zoekt <b>alleen groene cirkels</b> en leest uitsluitend het cijfer binnen zo'n groene cirkel.
+Er wordt geen 14×10-raster gebruikt.
+</div>
+
+<input id="foto" type="file" accept="image/*" capture="environment">
+
+<canvas id="beeld"></canvas>
+
+<div id="status">Klaar voor een foto.</div>
+
+<button id="lees" class="black">Lees groene cirkels opnieuw</button>
+
+<textarea id="hand" placeholder="OCR-resultaat. Corrigeer hier eventueel een verkeerd gelezen nummer en druk daarna op 'Bereken ontbrekende'."></textarea>
+
+<button id="bereken" class="blue">Bereken ontbrekende nummers</button>
+
+<div id="result" class="hidden"></div>
+<div id="found" class="hidden"></div>
+
+<button id="excel" class="green hidden">Maak Excelbestand</button>
+<button id="copy" class="blue hidden">Kopieer ontbrekende nummers</button>
+
+<hr>
+
+<div class="tip"><b>OneDrive</b></div>
+<div id="map">Nog geen OneDrive-map gekozen.</div>
+<button id="onedrive" class="orange">Kies map en sla Excel op in OneDrive</button>
+
+<div id="debug" class="hidden"></div>
+</main>
+
 <script>
-const FILE_URL="https://1drv.ms/t/c/aded5003e7acf3bd/IQDioy1-KCCeS6xsjOj4obR9Af6FJk9JFKoc7QURwsXfI_Y?e=J43Qi3";
-let laatste=""; const out=document.getElementById('out'),hand=document.getElementById('hand'),canvas=document.getElementById('prev');
-async function prep(f){const img=new Image();img.src=URL.createObjectURL(f);await new Promise(r=>img.onload=r);const s=2.8;canvas.width=img.width*s;canvas.height=img.height*s;canvas.style.display='block';const c=canvas.getContext('2d');c.drawImage(img,0,0,canvas.width,canvas.height);let d=c.getImageData(0,0,canvas.width,canvas.height);for(let i=0;i<d.data.length;i+=4){let v=0.34*d.data[i]+0.5*d.data[i+1]+0.16*d.data[i+2];v=v>150?255:0;d.data[i]=d.data[i+1]=d.data[i+2]=v;}c.putImageData(d,0,0);return canvas;}
-async function bereken(txt){const gev=[...new Set((txt.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);const alle=Array.from({length:140},(_,i)=>i+1);const miss=alle.filter(n=>!gev.includes(n));laatste=`JdB 1-140 - ${new Date().toLocaleString('nl-NL')}\nOntbrekend (${miss.length}):\n`+miss.join('\n');try{await navigator.clipboard.writeText(laatste);}catch{} out.textContent=laatste+"\n\n✓ gekopieerd naar klembord";document.getElementById('save').style.display='block';}
-document.getElementById('foto').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;out.textContent="⏳ Lezen...";const c=await prep(f);const {data:{text}}=await Tesseract.recognize(c,'eng',{tessedit_char_whitelist:'0123456789, \n',psm:6});hand.value=text;await bereken(text);});
-document.getElementById('bereken').onclick=()=>bereken(hand.value);
-document.getElementById('save').onclick=async()=>{
-  try{await navigator.clipboard.writeText(laatste);}catch{}
-  window.open(FILE_URL,'_blank');
-  out.textContent+= "\n\n>>> NU IN ONEDRIVE:\n1. Ctrl+A (alles selecteren)\n2. Ctrl+V (plakken)\n3. Klaar - OneDrive slaat zelf automatisch op";
+const CLIENT_ID = ""; // Vul hier later je Microsoft/OneDrive App ID in.
+const foto = document.getElementById('foto');
+const beeld = document.getElementById('beeld');
+const ctx = beeld.getContext('2d');
+const statusEl = document.getElementById('status');
+const hand = document.getElementById('hand');
+const result = document.getElementById('result');
+const found = document.getElementById('found');
+const excelBtn = document.getElementById('excel');
+const copyBtn = document.getElementById('copy');
+const oneDriveBtn = document.getElementById('onedrive');
+const mapEl = document.getElementById('map');
+const debugEl = document.getElementById('debug');
+
+let currentFile = null;
+let ontbrekend = [];
+let gevonden = [];
+let gevondenCirkels = [];
+let excelBlob = null;
+let excelNaam = "";
+let opencvReady = false;
+
+function setStatus(s){ statusEl.textContent = s; }
+
+function uniqueNumbers(text){
+  return [...new Set((text.match(/\d+/g)||[])
+    .map(Number)
+    .filter(n => n >= 1 && n <= 140))]
+    .sort((a,b)=>a-b);
+}
+
+function bereken(){
+  gevonden = uniqueNumbers(hand.value);
+  const alle = Array.from({length:140},(_,i)=>i+1);
+  ontbrekend = alle.filter(n => !gevonden.includes(n));
+
+  result.classList.remove('hidden');
+  result.innerHTML =
+    '<div>Ontbrekend: '+ontbrekend.length+'</div>'+
+    '<div style="font-size:27px;margin-top:7px">'+
+    ontbrekend.join(' &nbsp; ')+'</div>';
+
+  found.classList.remove('hidden');
+  found.innerHTML =
+    '<b>Gevonden ('+gevonden.length+')</b><br>'+
+    gevonden.join(', ')+
+    '<div class="small" style="margin-top:8px">'+
+    'Controleer de OCR voordat je Excel opslaat.</div>';
+
+  excelBtn.classList.remove('hidden');
+  copyBtn.classList.remove('hidden');
+  maakExcelBlob();
+}
+
+function maakExcelBlob(){
+  const rows = [
+    ['JdB Barendrecht – ontbrekende nummers'],
+    ['Datum', new Date().toLocaleString('nl-NL')],
+    ['Aantal gevonden', gevonden.length],
+    ['Aantal ontbrekend', ontbrekend.length],
+    [],
+    ['Ontbrekende nummers']
+  ];
+  ontbrekend.forEach(n=>rows.push([n]));
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:30}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Ontbrekend');
+
+  const wbout = XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  excelBlob = new Blob([wbout],{
+    type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  excelNaam = 'JdB_ontbrekende_nummers_'+
+    new Date().toISOString().slice(0,10)+'.xlsx';
+}
+
+async function imageToCanvas(file){
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  await new Promise((resolve,reject)=>{
+    img.onload=resolve; img.onerror=reject;
+  });
+
+  const maxWidth = 2600;
+  const scale = Math.min(1,maxWidth/img.width);
+  beeld.width = Math.round(img.width*scale);
+  beeld.height = Math.round(img.height*scale);
+  ctx.drawImage(img,0,0,beeld.width,beeld.height);
+  URL.revokeObjectURL(img.src);
+}
+
+function cvMatFromCanvas(){
+  return cv.imread(beeld);
+}
+
+function detectGreenCircles(){
+  if(!window.cv || !cv.Mat) throw new Error('OpenCV is nog niet geladen.');
+
+  const src = cvMatFromCanvas();
+  const hsv = new cv.Mat();
+  const mask = new cv.Mat();
+
+  cv.cvtColor(src,hsv,cv.COLOR_RGBA2RGB);
+  cv.cvtColor(hsv,hsv,cv.COLOR_RGB2HSV);
+
+  // Breed bereik voor verschillende groene borden/lichtomstandigheden.
+  const low = new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[30,45,40,0]);
+  const high = new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[95,255,255,255]);
+  cv.inRange(hsv,low,high,mask);
+
+  const kernel = cv.Mat.ones(5,5,cv.CV_8U);
+  cv.morphologyEx(mask,mask,cv.MORPH_CLOSE,kernel);
+  cv.morphologyEx(mask,mask,cv.MORPH_OPEN,kernel);
+
+  const contours = new cv.MatVector();
+  const hierarchy = new cv.Mat();
+  cv.findContours(mask,contours,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);
+
+  const imgArea = beeld.width*beeld.height;
+  const kandidaten = [];
+
+  for(let i=0;i<contours.size();i++){
+    const cnt = contours.get(i);
+    const area = cv.contourArea(cnt);
+    if(area < imgArea*0.00008 || area > imgArea*0.035){
+      cnt.delete(); continue;
+    }
+
+    const peri = cv.arcLength(cnt,true);
+    if(peri <= 0){cnt.delete();continue;}
+    const circularity = 4*Math.PI*area/(peri*peri);
+
+    const rect = cv.boundingRect(cnt);
+    const ratio = rect.width/rect.height;
+    const fill = area/(rect.width*rect.height);
+
+    // Groene cirkels: redelijk rond en redelijk gevuld.
+    if(circularity >= 0.48 && ratio > 0.65 && ratio < 1.55 && fill > 0.45){
+      kandidaten.push({
+        x:rect.x,y:rect.y,w:rect.width,h:rect.height,
+        area,circularity
+      });
+    }
+    cnt.delete();
+  }
+
+  src.delete();hsv.delete();mask.delete();low.delete();high.delete();
+  kernel.delete();contours.delete();hierarchy.delete();
+
+  // Dubbeldetecties verwijderen: contouren met sterk overlappende cirkels.
+  kandidaten.sort((a,b)=>b.area-a.area);
+  const gekozen=[];
+  for(const c of kandidaten){
+    const cx=c.x+c.w/2, cy=c.y+c.h/2;
+    const r=Math.max(c.w,c.h)/2;
+    let dubbel=false;
+    for(const d of gekozen){
+      const dx=cx-(d.x+d.w/2), dy=cy-(d.y+d.h/2);
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const rr=Math.max(r,Math.max(d.w,d.h)/2);
+      if(dist < rr*0.65){ dubbel=true;break; }
+    }
+    if(!dubbel) gekozen.push(c);
+  }
+
+  return gekozen;
+}
+
+async function ocrCircle(c, worker){
+  const padX=Math.round(c.w*0.22);
+  const padY=Math.round(c.h*0.22);
+
+  const x=Math.max(0,c.x-padX);
+  const y=Math.max(0,c.y-padY);
+  const w=Math.min(beeld.width-x,c.w+2*padX);
+  const h=Math.min(beeld.height-y,c.h+2*padY);
+
+  const src = cvMatFromCanvas();
+  const roi = src.roi(new cv.Rect(x,y,w,h));
+  const gray = new cv.Mat();
+  cv.cvtColor(roi,gray,cv.COLOR_RGBA2GRAY);
+
+  const variants=[];
+
+  // Variant 1: hoge helderheid = witte cijfers.
+  const t1 = new cv.Mat();
+  cv.threshold(gray,t1,150,255,cv.THRESH_BINARY);
+  variants.push(t1);
+
+  // Variant 2: Otsu.
+  const t2 = new cv.Mat();
+  cv.threshold(gray,t2,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU);
+  variants.push(t2);
+
+  // Variant 3: adaptive threshold.
+  const t3 = new cv.Mat();
+  cv.adaptiveThreshold(
+    gray,t3,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+    cv.THRESH_BINARY,31,7
+  );
+  variants.push(t3);
+
+  let beste = null;
+  const scores = [];
+
+  for(const v of variants){
+    const bigger = new cv.Mat();
+    cv.resize(v,bigger,new cv.Size(360,360),0,0,cv.INTER_CUBIC);
+    const {data} = await worker.recognize(bigger);
+
+    const nums = uniqueNumbers(data.text);
+    if(nums.length){
+      const wordNums = nums.filter(n=>n>=1&&n<=140);
+      const conf = Number(data.confidence||0);
+      for(const n of wordNums){
+        scores.push({n,conf});
+      }
+    }
+    bigger.delete();
+  }
+
+  // Kies hoogste confidence; bij gelijkheid voorkeur voor waarden met 2-3 cijfers.
+  scores.sort((a,b)=>{
+    if(b.conf!==a.conf)return b.conf-a.conf;
+    const la=String(a.n).length,lb=String(b.n).length;
+    return lb-la;
+  });
+  if(scores.length) beste=scores[0].n;
+
+  variants.forEach(v=>v.delete());
+  gray.delete();roi.delete();src.delete();
+
+  return beste;
+}
+
+async function leesGroeneCirkels(){
+  if(!currentFile)return;
+  if(!window.cv || !cv.Mat){
+    setStatus('OpenCV is nog niet geladen. Herlaad de pagina en probeer opnieuw.');
+    return;
+  }
+
+  setStatus('Foto voorbereiden...');
+  await imageToCanvas(currentFile);
+
+  let cirkels;
+  try{
+    cirkels=detectGreenCircles();
+  }catch(e){
+    console.error(e);
+    setStatus('Groene cirkels konden niet worden gevonden.');
+    return;
+  }
+
+  gevondenCirkels=cirkels;
+
+  if(!cirkels.length){
+    setStatus('Geen groene cirkels gevonden. Maak een duidelijkere foto met het bord volledig in beeld.');
+    return;
+  }
+
+  setStatus('Groene cirkels gevonden: '+cirkels.length+'. Cijfers worden gelezen...');
+
+  const worker=await Tesseract.createWorker('eng',1,{
+    logger:m=>{
+      if(m.status==='recognizing text'){
+        setStatus('Cijfers lezen... '+Math.round((m.progress||0)*100)+'%');
+      }
+    }
+  });
+
+  await worker.setParameters({
+    tessedit_char_whitelist:'0123456789',
+    tessedit_pageseg_mode:'10',
+    preserve_interword_spaces:'0'
+  });
+
+  const gelezen=[];
+  let ok=0;
+
+  for(let i=0;i<cirkels.length;i++){
+    setStatus('Groene cirkel '+(i+1)+' van '+cirkels.length+' lezen...');
+    const n=await ocrCircle(cirkels[i],worker);
+    if(n){gelezen.push(n);ok++;}
+  }
+
+  await worker.terminate();
+
+  // Geen raster: alleen werkelijk gevonden groene cirkels tellen.
+  hand.value=gelezen.join(' ');
+  bereken();
+
+  const uniek=[...new Set(gelezen)];
+  const dubbelen=gelezen.filter((n,i)=>gelezen.indexOf(n)!==i);
+
+  setStatus(
+    'Klaar. '+cirkels.length+' groene cirkels gevonden; '+
+    ok+' cijfers gelezen; '+uniek.length+' unieke nummers.'
+  );
+
+  debugEl.classList.remove('hidden');
+  debugEl.innerHTML=
+    '<b>Controle:</b> groene cirkels: '+cirkels.length+
+    ' · gelezen: '+ok+
+    ' · unieke nummers: '+uniek.length+
+    (dubbelen.length ? ' · dubbele OCR: '+[...new Set(dubbelen)].join(', ') : '');
+}
+
+foto.addEventListener('change',async e=>{
+  currentFile=e.target.files[0];
+  if(!currentFile)return;
+  result.classList.add('hidden');
+  found.classList.add('hidden');
+  excelBtn.classList.add('hidden');
+  copyBtn.classList.add('hidden');
+  debugEl.classList.add('hidden');
+  setStatus('Foto ontvangen...');
+  try{await leesGroeneCirkels();}
+  catch(err){
+    console.error(err);
+    setStatus('Fout bij lezen: '+(err.message||err));
+  }
+});
+
+document.getElementById('lees').onclick=async()=>{
+  if(!currentFile){setStatus('Maak eerst een foto.');return;}
+  await leesGroeneCirkels();
 };
-</script></body></html>
+
+document.getElementById('bereken').onclick=bereken;
+
+copyBtn.onclick=async()=>{
+  try{
+    await navigator.clipboard.writeText(ontbrekend.join('\n'));
+    setStatus('Ontbrekende nummers zijn gekopieerd. Je kunt ze onder elkaar in Excel plakken.');
+  }catch{
+    setStatus('Kopiëren is geblokkeerd. Selecteer de lijst handmatig.');
+  }
+};
+
+excelBtn.onclick=()=>{
+  if(!excelBlob)maakExcelBlob();
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(excelBlob);
+  a.download=excelNaam;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  setStatus('Excelbestand is gemaakt. Je kunt het daarna via Delen naar OneDrive sturen.');
+};
+
+oneDriveBtn.onclick=()=>{
+  if(!excelBlob){bereken(); maakExcelBlob();}
+  if(!excelBlob){setStatus('Maak eerst een resultaat.');return;}
+
+  if(!CLIENT_ID){
+    setStatus(
+      'OneDrive is technisch voorbereid, maar de Microsoft App-ID ontbreekt nog. '+
+      'Na het instellen van de App-ID verschijnt hier de OneDrive-mapkeuze.'
+    );
+    return;
+  }
+
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const dataUri=reader.result;
+    OneDrive.save({
+      clientId:CLIENT_ID,
+      action:'save',
+      sourceUri:dataUri,
+      fileName:excelNaam,
+      openInNewWindow:true,
+      viewType:'folders',
+      accountSwitchEnabled:true,
+      nameConflictBehavior:'rename',
+      success:function(files){
+        mapEl.textContent='✓ Excel opgeslagen in OneDrive.';
+        setStatus('Klaar: het Excelbestand staat in de gekozen OneDrive-map.');
+      },
+      progress:function(pct){
+        setStatus('Uploaden naar OneDrive... '+Math.round(pct)+'%');
+      },
+      cancel:function(){
+        setStatus('OneDrive-opslag geannuleerd.');
+      },
+      error:function(err){
+        console.error(err);
+        setStatus('OneDrive-fout. Controleer de Microsoft App-registratie en de gekozen map.');
+      }
+    });
+  };
+  reader.readAsDataURL(excelBlob);
+};
+
+// OpenCV status
+let cvCheck=setInterval(()=>{
+  if(window.cv && cv.Mat){
+    opencvReady=true;
+    clearInterval(cvCheck);
+    setStatus('Klaar voor een foto.');
+  }
+},250);
+</script>
+</body>
+</html>
