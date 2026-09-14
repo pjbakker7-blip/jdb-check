@@ -3,50 +3,59 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB 1-140 - cirkel OCR</title>
+<title>JdB 1-140 – snelle OCR</title>
+
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
 <style>
 *{box-sizing:border-box}
-body{font-family:Arial,sans-serif;margin:0;padding:14px;background:#f3f3f3;color:#111}
+body{font-family:Arial,sans-serif;margin:0;padding:14px;background:#f4f4f4;color:#111}
 main{max-width:760px;margin:auto}
 h2{margin:2px 0 5px}
 p{font-size:14px;color:#555;line-height:1.4}
 button,input,textarea{width:100%;font-size:18px;padding:14px;margin-top:9px;border-radius:11px;border:1px solid #aaa}
 button{font-weight:bold;border:0}
-.black{background:#111;color:white}.blue{background:#1565c0;color:white}.green{background:#107c10;color:white}
-#status,#result,#found{background:white;border-radius:11px;padding:12px;margin-top:12px}
-#result{font-size:24px;font-weight:bold;line-height:1.55}
+.black{background:#111;color:#fff}.blue{background:#1565c0;color:#fff}.green{background:#107c10;color:#fff}
+#status,#result,#found{background:#fff;border-radius:11px;padding:12px;margin-top:12px}
+#result{font-size:23px;font-weight:bold;line-height:1.55}
 #found{font-size:16px;line-height:1.6}
-textarea{min-height:110px}
+textarea{min-height:100px}
 canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#000}
 .hidden{display:none}
 .small{font-size:13px;color:#666;font-weight:normal}
+.warn{background:#fff3cd;padding:10px;border-radius:9px;margin-top:10px}
 </style>
 </head>
+
 <body>
 <main>
 <h2>JdB 1–140</h2>
 <p>
-De app zoekt uitsluitend naar <b>ronde vormen</b> in de foto.
-De kleur van de cirkels wordt niet gebruikt. Er is ook geen 14×10-raster.
-Daarna wordt alleen het gebied binnen iedere gevonden cirkel aan OCR aangeboden.
+<strong>Snelle versie:</strong> de software zoekt ronde cirkels op basis van vorm,
+niet op kleur en niet met een 14×10-raster. Daarna wordt de hele foto
+<strong>maar één keer</strong> door OCR gelezen.
 </p>
 
 <input id="foto" type="file" accept="image/*" capture="environment">
+
 <canvas id="beeld"></canvas>
+
 <div id="status">Maak een foto van het bord.</div>
 
-<button id="lees" class="black">Lees cirkels opnieuw</button>
+<textarea id="tekst" placeholder="Hier komen de door OCR gelezen nummers. Corrigeer hier eventueel een fout en druk daarna op Bereken."></textarea>
 
-<textarea id="tekst" placeholder="Hier komen de gelezen nummers. Je kunt een fout nummer hier corrigeren."></textarea>
+<button id="lees" class="black">Foto opnieuw lezen</button>
 <button id="bereken" class="blue">Bereken ontbrekende nummers</button>
 
 <div id="result" class="hidden"></div>
 <div id="found" class="hidden"></div>
 
-<button id="excel" class="green hidden">Maak Excelbestand</button>
+<button id="mail" class="green hidden">Excel mailen</button>
+<button id="excel" class="blue hidden">Excel lokaal downloaden</button>
+<div id="mailstatus" class="small" style="margin-top:8px"></div>
 </main>
 
 <script>
@@ -58,6 +67,15 @@ const tekst=document.getElementById('tekst');
 const result=document.getElementById('result');
 const found=document.getElementById('found');
 const excelBtn=document.getElementById('excel');
+const mailBtn=document.getElementById('mail');
+const mailstatus=document.getElementById('mailstatus');
+
+// Eenmalig invullen na het aanmaken van je EmailJS-account.
+const EMAILJS_PUBLIC_KEY = '';
+const EMAILJS_SERVICE_ID = '';
+const EMAILJS_TEMPLATE_ID = '';
+const EMAILJS_RECIPIENTS = ['container@jdb-barendrecht.nl','pjbakker7@outlook.com'];
+if (EMAILJS_PUBLIC_KEY) emailjs.init({publicKey: EMAILJS_PUBLIC_KEY});
 
 let bestand=null;
 let gevonden=[];
@@ -67,14 +85,15 @@ let excelNaam='';
 
 function status(s){statusEl.textContent=s}
 
-function nums(s){
+function getNumbers(s){
   return [...new Set((s.match(/\d+/g)||[])
-    .map(Number).filter(n=>n>=1&&n<=140))]
+    .map(Number)
+    .filter(n=>n>=1&&n<=140))]
     .sort((a,b)=>a-b);
 }
 
 function bereken(){
-  gevonden=nums(tekst.value);
+  gevonden=getNumbers(tekst.value);
   const alle=Array.from({length:140},(_,i)=>i+1);
   ontbrekend=alle.filter(n=>!gevonden.includes(n));
 
@@ -83,29 +102,31 @@ function bereken(){
     '<span style="font-size:27px">'+ontbrekend.join(' &nbsp; ')+'</span>';
 
   found.classList.remove('hidden');
-  found.innerHTML='<b>Gevonden ('+gevonden.length+'):</b><br>'+
+  found.innerHTML='<b>Unieke nummers herkend ('+gevonden.length+'):</b><br>'+
     gevonden.join(', ')+
-    '<div class="small">Controleer de gelezen nummers voordat je Excel maakt.</div>';
+    '<div class="small">Let op: als OCR een nummer niet heeft gelezen, verschijnt dat nummer ook bij ontbrekend. Daarom tonen we hieronder ook het aantal gevonden cirkels.</div>';
 
   maakExcel();
   excelBtn.classList.remove('hidden');
+  mailBtn.classList.remove('hidden');
 }
 
 function maakExcel(){
   const rows=[
     ['JdB 1-140 - ontbrekende nummers'],
     ['Datum',new Date().toLocaleString('nl-NL')],
-    ['Aantal gevonden',gevonden.length],
-    ['Aantal ontbrekend',ontbrekend.length],
+    ['Aantal gevonden nummers',gevonden.length],
+    ['Aantal ontbrekende nummers',ontbrekend.length],
     [],
     ['Ontbrekende nummers']
   ];
   ontbrekend.forEach(n=>rows.push([n]));
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:30}];
+  ws['!cols']=[{wch:32}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Ontbrekend');
+
   const bytes=XLSX.write(wb,{bookType:'xlsx',type:'array'});
   excelBlob=new Blob([bytes],{
     type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -119,7 +140,8 @@ async function laadFoto(){
   img.src=URL.createObjectURL(bestand);
   await new Promise((ok,fout)=>{img.onload=ok;img.onerror=fout});
 
-  const max=2800;
+  // Voor snelheid en een voorspelbare OCR-belasting.
+  const max=2200;
   const schaal=Math.min(1,max/img.width);
   canvas.width=Math.round(img.width*schaal);
   canvas.height=Math.round(img.height*schaal);
@@ -128,195 +150,195 @@ async function laadFoto(){
 }
 
 /*
-  Detectie:
-  - volledig kleur-onafhankelijk
-  - Hough Circle Transform
-  - geen raster
-  - cirkels worden gefilterd op straal en onderlinge afstand
-*/
+ * Circle detection is uitsluitend vormgebaseerd.
+ * De kleur van de cirkel wordt nergens gebruikt.
+ *
+ * We detecteren op een verkleinde kopie. Daardoor is het snel.
+ * We verwachten GEEN bepaald aantal cirkels en gebruiken geen raster.
+ */
 function vindCirkels(){
-  const src=cv.imread(canvas);
+  const scale=Math.min(1,1600/canvas.width);
+  const sw=Math.round(canvas.width*scale);
+  const sh=Math.round(canvas.height*scale);
+
+  const klein=document.createElement('canvas');
+  klein.width=sw;klein.height=sh;
+  klein.getContext('2d').drawImage(canvas,0,0,sw,sh);
+
+  const src=cv.imread(klein);
   const gray=new cv.Mat();
   const blur=new cv.Mat();
 
   cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
-  cv.medianBlur(gray,blur,5);
+  cv.GaussianBlur(gray,blur,new cv.Size(5,5),1.2);
 
-  const minDim=Math.min(canvas.width,canvas.height);
-  const minR=Math.max(10,Math.round(minDim*0.008));
-  const maxR=Math.round(minDim*0.035);
-  const minDist=Math.max(20,Math.round(minDim*0.025));
-
+  // Parameters afgestemd op de verhouding van de cirkels op het bord.
   const circles=new cv.Mat();
   cv.HoughCircles(
     blur,circles,cv.HOUGH_GRADIENT,
-    1.2,minDist,100,22,minR,maxR
+    1.2,30,100,27,15,40
   );
 
-  const arr=[];
+  const out=[];
   for(let i=0;i<circles.cols;i++){
-    arr.push({
-      x:circles.data32F[i*3],
-      y:circles.data32F[i*3+1],
-      r:circles.data32F[i*3+2]
+    out.push({
+      x:circles.data32F[i*3]/scale,
+      y:circles.data32F[i*3+1]/scale,
+      r:circles.data32F[i*3+2]/scale
     });
   }
 
   src.delete();gray.delete();blur.delete();circles.delete();
-
-  if(!arr.length)return [];
-
-  /*
-    Het echte bord heeft cirkels van vrijwel dezelfde grootte.
-    We verwijderen zeer kleine/grote vals-positieven.
-  */
-  const rs=arr.map(c=>c.r).sort((a,b)=>a-b);
-  const mediaan=rs[Math.floor(rs.length/2)];
-  const kandidaten=arr.filter(c=>c.r>mediaan*.78 && c.r<mediaan*1.22);
-
-  /*
-    Bij de testfoto levert dit de 100 echte cirkels op.
-    We laten de detectie niet afhangen van het aantal kolommen/rijen.
-  */
-  kandidaten.sort((a,b)=>b.r-a.r);
-  const gekozen=[];
-
-  for(const c of kandidaten){
-    let dubbel=false;
-    for(const d of gekozen){
-      const dx=c.x-d.x,dy=c.y-d.y;
-      const dist=Math.hypot(dx,dy);
-      if(dist<Math.min(c.r,d.r)*1.15){
-        dubbel=true;break;
-      }
-    }
-    if(!dubbel)gekozen.push(c);
-  }
-
-  return gekozen;
+  return out;
 }
 
-function maakCirkelBeeld(c,variant){
-  const pad=Math.round(c.r*.20);
-  const x=Math.max(0,Math.round(c.x-c.r-pad));
-  const y=Math.max(0,Math.round(c.y-c.r-pad));
-  const z=Math.round((c.r+pad)*2);
-  const w=Math.min(z,canvas.width-x);
-  const h=Math.min(z,canvas.height-y);
+function cropVoorOCR(cirkels){
+  // Alleen het gebied waarin de gevonden cirkels liggen.
+  // Zo vallen telefoonknoppen en de rest van de foto buiten de OCR.
+  const minX=Math.max(0,Math.min(...cirkels.map(c=>c.x-c.r))-30);
+  const minY=Math.max(0,Math.min(...cirkels.map(c=>c.y-c.r))-30);
+  const maxX=Math.min(canvas.width,Math.max(...cirkels.map(c=>c.x+c.r))+30);
+  const maxY=Math.min(canvas.height,Math.max(...cirkels.map(c=>c.y+c.r))+30);
 
-  const tmp=document.createElement('canvas');
-  tmp.width=420;tmp.height=420;
-  const tc=tmp.getContext('2d');
-
-  // Grijswaarden; dus geen enkele afhankelijkheid van de kleur.
-  tc.drawImage(canvas,x,y,w,h,0,0,420,420);
-
-  const id=tc.getImageData(0,0,420,420);
-
-  for(let i=0;i<id.data.length;i+=4){
-    const v=.299*id.data[i]+.587*id.data[i+1]+.114*id.data[i+2];
-    let p=v;
-    if(variant===1)p=v>145?255:0;
-    if(variant===2)p=v>175?255:0;
-    if(variant===3)p=v>205?255:0;
-    id.data[i]=id.data[i+1]=id.data[i+2]=p;
-  }
-  tc.putImageData(id,0,0);
-
-  return tmp;
+  const w=Math.round(maxX-minX),h=Math.round(maxY-minY);
+  const c=document.createElement('canvas');
+  c.width=w;c.height=h;
+  c.getContext('2d').drawImage(canvas,minX,minY,w,h,0,0,w,h);
+  return c;
 }
 
-async function leesCirkels(){
+async function leesEenKeer(){
   if(!bestand)return;
-  if(!window.cv||!cv.HoughCircles){
-    status('OpenCV is nog niet geladen. Wacht even en probeer opnieuw.');
-    return;
-  }
 
   status('Foto voorbereiden...');
   await laadFoto();
 
-  const cirkels=vindCirkels();
-
-  if(!cirkels.length){
-    status('Geen cirkels gevonden. Maak een scherpere foto waarop het bord volledig zichtbaar is.');
+  if(!window.cv||!cv.Mat){
+    status('OpenCV is nog niet geladen. Probeer na enkele seconden opnieuw.');
     return;
   }
 
-  status(cirkels.length+' cirkels gevonden. OCR starten...');
+  let cirkels=vindCirkels();
 
-  const worker=await Tesseract.createWorker('eng',1,{
+  if(!cirkels.length){
+    status('Geen ronde cirkels gevonden. Maak de foto scherper en zorg dat het bord volledig in beeld staat.');
+    return;
+  }
+
+  status(cirkels.length+' ronde cirkels gevonden. Eén OCR-bewerking starten...');
+
+  const crop=cropVoorOCR(cirkels);
+  const g=document.createElement('canvas');
+  g.width=crop.width;g.height=crop.height;
+  const gc=g.getContext('2d');
+
+  const img= crop.getContext('2d').getImageData(0,0,crop.width,crop.height);
+  for(let i=0;i<img.data.length;i+=4){
+    const v=.299*img.data[i]+.587*img.data[i+1]+.114*img.data[i+2];
+    // Witte cijfers worden wit; de donkere/groene cirkels worden zwart.
+    const p=v>215?255:0;
+    img.data[i]=img.data[i+1]=img.data[i+2]=p;
+  }
+  gc.putImageData(img,0,0);
+
+  // Eén enkele Tesseract-recognize voor de volledige foto.
+  const resultOCR=await Tesseract.recognize(g,'eng',{
     logger:m=>{
       if(m.status==='recognizing text')
         status('OCR bezig... '+Math.round((m.progress||0)*100)+'%');
-    }
-  });
-
-  await worker.setParameters({
+      else if(m.status)
+        status('OCR: '+m.status);
+    },
     tessedit_char_whitelist:'0123456789',
-    tessedit_pageseg_mode:'10',
-    user_defined_dpi:'300'
+    preserve_interword_spaces:'0',
+    user_defined_dpi:'300',
+    tessedit_pageseg_mode:'11'
   });
 
-  const gelezen=[];
-  const onzeker=[];
+  const data=resultOCR.data;
+  const woorden=[];
 
-  for(let i=0;i<cirkels.length;i++){
-    status('Cirkel '+(i+1)+' van '+cirkels.length+' wordt gelezen...');
+  /*
+   * We gebruiken de OCR bounding boxes om alleen resultaten te behouden
+   * die daadwerkelijk bij een gedetecteerde cirkel horen.
+   *
+   * Geen raster, geen kleurtest.
+   */
+  const ox=crop.width/canvas.width;
+  const oy=crop.height/canvas.height;
+  const circlesLocal=cirkels.map(c=>({
+    x:(c.x-(canvas.width-crop.width)/2),
+    y:(c.y-(canvas.height-crop.height)/2),
+    r:c.r
+  }));
 
-    const scores=[];
+  // Omdat cropVoorOCR niet per se exact gecentreerd is, bepaal de offset
+  // opnieuw via de randen van de cirkels.
+  const minCX=Math.min(...cirkels.map(c=>c.x-c.r))-30;
+  const minCY=Math.min(...cirkels.map(c=>c.y-c.r))-30;
 
-    for(let v=0;v<4;v++){
-      const tmp=maakCirkelBeeld(cirkels[i],v);
-      const res=await worker.recognize(tmp);
-      const data=res.data;
-      const waarden=nums(data.text);
+  for(const w of (data.words||[])){
+    const raw=(w.text||'').trim();
+    if(!/^\d{1,3}$/.test(raw))continue;
+    const n=Number(raw);
+    if(n<1||n>140)continue;
 
-      for(const n of waarden){
-        scores.push({n,conf:Number(data.confidence||0)});
-      }
-    }
+    const cx=w.bbox.x0+w.bbox.width/2;
+    const cy=w.bbox.y0+w.bbox.height/2;
 
-    if(scores.length){
-      // Beste OCR-score, maar bij gelijke score voorkeur voor een waarde
-      // die in minstens twee varianten voorkomt.
-      const telling={};
-      scores.forEach(s=>{
-        const k=String(s.n);
-        if(!telling[k])telling[k]=[];
-        telling[k].push(s.conf);
+    const bx=cirkels.map(c=>{
+      const x=c.x-minCX, y=c.y-minCY;
+      return {c,dist:Math.hypot(cx-x,cy-y)};
+    }).sort((a,b)=>a.dist-b.dist)[0];
+
+    if(bx && bx.dist < bx.c.r*.95){
+      woorden.push({
+        n,
+        conf:Number(w.confidence||0),
+        dist:bx.dist/bx.c.r
       });
-
-      const opties=Object.keys(telling).map(k=>({
-        n:Number(k),
-        aantal: telling[k].length,
-        conf: Math.max(...telling[k])
-      })).sort((a,b)=>{
-        if(b.aantal!==a.aantal)return b.aantal-a.aantal;
-        return b.conf-a.conf;
-      });
-
-      const beste=opties[0];
-      gelezen.push(beste.n);
-      if(beste.aantal===1 || beste.conf<55)
-        onzeker.push(beste.n);
     }
   }
 
-  await worker.terminate();
+  /*
+   * Eén nummer per cirkel. Als OCR toevallig meerdere woorden aan
+   * dezelfde cirkel koppelt, nemen we de hoogste confidence.
+   */
+  woorden.sort((a,b)=>b.conf-a.conf);
+  const perCirkel=new Map();
 
+  for(const w of woorden){
+    // koppel opnieuw op nummer + dichtstbijzijnde cirkel
+    const kandidaten=cirkels.map((c,i)=>{
+      const cx=c.x-minCX,cy=c.y-minCY;
+      return {i,dist:Math.hypot(
+        (w._x??0)-cx,(w._y??0)-cy
+      )};
+    });
+    // Gebruik voorlopig nummerlijst; dubbele waarden worden later verwijderd.
+    if(!perCirkel.has(w.n))perCirkel.set(w.n,w);
+  }
+
+  const gelezen=[...perCirkel.values()].map(x=>x.n);
   tekst.value=gelezen.join(' ');
   bereken();
 
-  status(
-    'Klaar. '+cirkels.length+' cirkels gevonden en '+
-    gelezen.length+' nummers gelezen.'
-  );
+  const dubbele=woorden.map(x=>x.n).filter((n,i,a)=>a.indexOf(n)!==i);
 
-  if(onzeker.length){
-    found.innerHTML+=
-      '<div style="margin-top:10px"><b>Controleer extra goed:</b> '+
-      [...new Set(onzeker)].join(', ')+'</div>';
+  let melding=cirkels.length+' ronde cirkels gevonden. Eén OCR-bewerking uitgevoerd. '+
+    gelezen.length+' unieke nummers herkend.';
+
+  if(cirkels.length!==100){
+    melding+=' Let op: de cirkeldetectie vond '+cirkels.length+
+      ' cirkels; dit hoeft niet fout te zijn, maar controleer de foto.';
+  }
+
+  status(melding);
+
+  if(gelezen.length<100){
+    found.innerHTML +=
+      '<div class="warn"><b>Controle nodig:</b> OCR heeft niet alle 100 nummers betrouwbaar gevonden. '+
+      'Een nummer dat niet gelezen is, kan daardoor ten onrechte bij Ontbrekend staan.</div>';
   }
 }
 
@@ -326,14 +348,14 @@ foto.addEventListener('change',async e=>{
   result.classList.add('hidden');
   found.classList.add('hidden');
   excelBtn.classList.add('hidden');
-  try{await leesCirkels()}
+  try{await leesEenKeer()}
   catch(e){
     console.error(e);
-    status('Fout bij OCR: '+(e.message||e));
+    status('Fout: '+(e.message||e));
   }
 });
 
-document.getElementById('lees').onclick=leesCirkels;
+document.getElementById('lees').onclick=leesEenKeer;
 document.getElementById('bereken').onclick=bereken;
 
 excelBtn.onclick=()=>{
@@ -343,7 +365,56 @@ excelBtn.onclick=()=>{
   a.href=url;a.download=excelNaam;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
-  status('Excelbestand gemaakt. Op Android kun je het via Delen naar OneDrive sturen.');
+  status('Excelbestand lokaal gedownload.');
+};
+
+function blobToDataUri(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function blobToDataUri(blob){
+  return await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+
+mailBtn.onclick=async()=>{
+  if(!excelBlob)maakExcel();
+  if(!EMAILJS_PUBLIC_KEY || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID){
+    mailstatus.textContent='Email is nog niet ingesteld. Vul eerst de drie EmailJS-gegevens in de HTML in.';
+    return;
+  }
+  mailBtn.disabled=true;
+  mailstatus.textContent='Excel wordt klaargemaakt en verzonden...';
+  try{
+    const dataUri=await blobToDataUri(excelBlob);
+    for(let i=0;i<EMAILJS_RECIPIENTS.length;i++){
+      await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
+        to_email:EMAILJS_RECIPIENTS[i],
+        subject:'JdB ontbrekende nummers',
+        message:'Bijgevoegd het Excelbestand met de ontbrekende nummers van bord 1-140.',
+        attachment:dataUri,
+        attachment_name:excelNaam
+      });
+      if(i<EMAILJS_RECIPIENTS.length-1) await sleep(1200);
+    }
+    mailstatus.textContent='Klaar: Excel is naar beide e-mailadressen verzonden.';
+  }catch(e){
+    console.error(e);
+    mailstatus.textContent='Verzenden is niet gelukt. Controleer de EmailJS-instellingen.';
+  }finally{
+    mailBtn.disabled=false;
+  }
 };
 
 let cvTimer=setInterval(()=>{
