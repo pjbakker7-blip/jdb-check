@@ -229,148 +229,129 @@ function voegOCRToe(result,row,startIndex,tileW,gap,candidates){
   }
 }
 
+async function maakOCRBeeld(c, threshold=205){
+  const pad=1.25;
+  const s=Math.max(12,Math.round(c.r*pad));
+  const sx=Math.max(0,Math.round(c.x-s));
+  const sy=Math.max(0,Math.round(c.y-s));
+  const sw=Math.min(canvas.width-sx,Math.round(2*s+1));
+  const sh=Math.min(canvas.height-sy,Math.round(2*s+1));
+  const raw=document.createElement('canvas'); raw.width=sw; raw.height=sh;
+  const rc=raw.getContext('2d');
+  rc.drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
+  const im=rc.getImageData(0,0,sw,sh);
+  const cx=sw/2, cy=sh/2, rr=c.r*1.03;
+  for(let p=0;p<im.data.length;p+=4){
+    const px=(p/4)%sw, py=Math.floor((p/4)/sw);
+    const inside=(px-cx)*(px-cx)+(py-cy)*(py-cy)<=rr*rr;
+    if(!inside){
+      im.data[p]=im.data[p+1]=im.data[p+2]=0;
+    }else{
+      const lum=.299*im.data[p]+.587*im.data[p+1]+.114*im.data[p+2];
+      // Witte cijfers zijn licht; het cirkelvlak is donkerder.
+      // Drempel 205 werkt veel beter dan de te lage drempel uit v12.
+      const v=lum>threshold?0:255;
+      im.data[p]=im.data[p+1]=im.data[p+2]=v;
+    }
+  }
+  rc.putImageData(im,0,0);
+  const out=document.createElement('canvas'); out.width=480; out.height=480;
+  const oc=out.getContext('2d'); oc.fillStyle='white'; oc.fillRect(0,0,480,480);
+  oc.drawImage(raw,35,35,410,410);
+  return out;
+}
+
+function haalNummerUitOCR(r){
+  const txt=(r.data?.text||'').trim();
+  const matches=txt.match(/\d{1,3}/g)||[];
+  const kandidaten=[];
+  const conf0=Number(r.data?.confidence||0);
+  for(const m of matches){
+    const n=Number(m);
+    if(n>=1&&n<=140) kandidaten.push({n,conf:conf0});
+  }
+  if(!kandidaten.length)return null;
+  kandidaten.sort((a,b)=>b.conf-a.conf);
+  return kandidaten[0];
+}
+
 async function leesEenKeer(){
   if(!bestand)return;
-  result.classList.add('hidden');found.classList.add('hidden');check.classList.add('hidden');excelBtn.classList.add('hidden');mailBtn.classList.add('hidden');
+  result.classList.add('hidden'); found.classList.add('hidden'); check.classList.add('hidden');
+  excelBtn.classList.add('hidden'); mailBtn.classList.add('hidden');
   status('Foto voorbereiden...');
   await laadFoto();
   if(!window.cv||!cv.Mat){status('OpenCV is nog niet geladen. Probeer opnieuw.');return;}
 
   cirkels=vindCirkels();
   if(!cirkels.length){status('Geen ronde cirkels gevonden.');return;}
-
-  // Sorteer uitsluitend voor de interne OCR-contactplaat; we gebruiken geen vast raster.
-  // Dit is dus geen aanname over 10x10 of 14x10 in de originele foto.
   cirkels.sort((a,b)=>a.y-b.y || a.x-b.x);
-  status(cirkels.length+' cirkels gevonden. OCR-beeld opbouwen...');
 
+  status(cirkels.length+' cirkels gevonden. OCR starten...');
   const worker=await Tesseract.createWorker('eng');
   await worker.setParameters({
     tessedit_char_whitelist:'0123456789',
-    tessedit_pageseg_mode:'11',
-    preserve_interword_spaces:'1',
+    tessedit_pageseg_mode:'10',
+    preserve_interword_spaces:'0',
     user_defined_dpi:'300'
   });
 
-  // Maak één contactplaat van alle afzonderlijk uitgesneden cirkels.
-  // Iedere gevonden cirkel krijgt een eigen OCR-vak. Zo ziet Tesseract grote,
-  // uniforme cijfers in plaats van kleine cijfers verspreid over een foto.
-  const tile=170, gap=18, cols=Math.min(10, Math.max(5, Math.ceil(Math.sqrt(cirkels.length))));
-  const rows=Math.ceil(cirkels.length/cols);
-  const sheet=document.createElement('canvas');
-  sheet.width=cols*tile+(cols-1)*gap;
-  sheet.height=rows*tile+(rows-1)*gap;
-  const sc=sheet.getContext('2d');
-  sc.fillStyle='white';sc.fillRect(0,0,sheet.width,sheet.height);
+  const resultaten=Array(cirkels.length).fill(null);
+  const confidence=Array(cirkels.length).fill(0);
 
-  function maakOCRTile(c){
-    const pad=1.22;
-    const s=Math.max(10,Math.round(c.r*pad));
-    const sx=Math.max(0,Math.round(c.x-s));
-    const sy=Math.max(0,Math.round(c.y-s));
-    const sw=Math.min(canvas.width-sx,Math.round(2*s+1));
-    const sh=Math.min(canvas.height-sy,Math.round(2*s+1));
-    const raw=document.createElement('canvas'); raw.width=sw; raw.height=sh;
-    const rc=raw.getContext('2d');
-    rc.drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
-    const im=rc.getImageData(0,0,sw,sh);
-    const cx=sw/2, cy=sh/2;
-    const rr=c.r*1.04;
-    for(let p=0;p<im.data.length;p+=4){
-      const px=(p/4)%sw, py=Math.floor((p/4)/sw);
-      if((px-cx)*(px-cx)+(py-cy)*(py-cy)>rr*rr){
-        im.data[p]=im.data[p+1]=im.data[p+2]=255;
-      }else{
-        // Grijswaarde-only: detectie en OCR zijn onafhankelijk van de cirkelkleur.
-        const lum=.299*im.data[p]+.587*im.data[p+1]+.114*im.data[p+2];
-        // zwart cijfer op wit: witte cijfers -> zwart, donker cirkelvlak -> wit
-        const v=lum>155?0:255;
-        im.data[p]=im.data[p+1]=im.data[p+2]=v;
-      }
-    }
-    rc.putImageData(im,0,0);
-    const out=document.createElement('canvas');out.width=tile;out.height=tile;
-    const oc=out.getContext('2d');oc.fillStyle='white';oc.fillRect(0,0,tile,tile);
-    // Laat een royale witte rand rond het cijfer voor OCR.
-    oc.drawImage(raw,8,8,tile-16,tile-16);
-    return out;
-  }
-
-  const meta=[];
+  // Eerste ronde: één OCR per cirkel met een goede zwart/wit-voorbewerking.
   for(let i=0;i<cirkels.length;i++){
-    const rr=Math.floor(i/cols), cc=i%cols;
-    sc.drawImage(maakOCRTile(cirkels[i]),cc*(tile+gap),rr*(tile+gap));
-    meta.push({index:i,x:cc*(tile+gap),y:rr*(tile+gap)});
+    status('Cijfer '+(i+1)+' van '+cirkels.length+' lezen...');
+    const pic=await maakOCRBeeld(cirkels[i],205);
+    const r=await worker.recognize(pic);
+    const best=haalNummerUitOCR(r);
+    if(best){resultaten[i]=best.n;confidence[i]=best.conf;}
   }
 
-  // Eén OCR-bewerking over de hele contactplaat.
-  status('Eén OCR-bewerking uitvoeren...');
-  const ocr=await worker.recognize(sheet);
+  // Alleen de moeilijke cirkels opnieuw proberen. Dit houdt de normale route
+  // snel en geeft de lastige cijfers een tweede/derde kans.
+  const moeilijk=[];
+  for(let i=0;i<resultaten.length;i++){
+    if(resultaten[i]===null || confidence[i]<55) moeilijk.push(i);
+  }
+
+  if(moeilijk.length){
+    for(let k=0;k<moeilijk.length;k++){
+      const i=moeilijk[k];
+      let gekozen=resultaten[i];
+      let besteConf=confidence[i];
+      for(const th of [185,225]){
+        status('Extra controle '+(k+1)+' van '+moeilijk.length+'...');
+        const pic=await maakOCRBeeld(cirkels[i],th);
+        const r=await worker.recognize(pic);
+        const best=haalNummerUitOCR(r);
+        if(best && best.conf>besteConf){
+          gekozen=best.n; besteConf=best.conf;
+        }
+      }
+      resultaten[i]=gekozen;
+      confidence[i]=besteConf;
+    }
+  }
+
   await worker.terminate();
 
-  const kandidaten=Array.from({length:cirkels.length},()=>[]);
-  for(const w of (ocr.data?.words||[])){
-    const raw=(w.text||'').trim().replace(/[^0-9]/g,'');
-    if(!/^\d{1,3}$/.test(raw))continue;
-    const n=Number(raw);if(n<1||n>140)continue;
-    const cx=w.bbox.x0+w.bbox.width/2;
-    const cy=w.bbox.y0+w.bbox.height/2;
-    const col=Math.round(cx/(tile+gap)-0.5);
-    const row=Math.round(cy/(tile+gap)-0.5);
-    const idx=row*cols+col;
-    if(idx<0||idx>=cirkels.length)continue;
-    const localX=cx-meta[idx].x, localY=cy-meta[idx].y;
-    if(localX<15||localX>tile-15||localY<15||localY>tile-15)continue;
-    kandidaten[idx].push({n,conf:Number(w.confidence||0),text:raw});
-  }
-
-  // Nog robuuster: als OCR een heel getal als losse cijfers opsplitst,
-  // probeer de woorden binnen hetzelfde vak te combineren.
-  const resultaten=[];
-  for(const list of kandidaten){
-    if(!list.length){resultaten.push(null);continue;}
-    list.sort((a,b)=>b.conf-a.conf);
-    resultaten.push(list[0]);
-  }
-
-  // Tweede, gerichte fallback: alleen niet-herkende vakken worden afzonderlijk
-  // gelezen. Daardoor blijft de normale route één OCR-pass en wordt alleen bij
-  // moeilijke foto's extra werk gedaan.
-  const ontbrekendeIndices=resultaten.map((x,i)=>x? -1:i).filter(i=>i>=0);
-  if(ontbrekendeIndices.length && ontbrekendeIndices.length<=Math.max(20,Math.round(cirkels.length*0.35))){
-    status(ontbrekendeIndices.length+' moeilijke cirkels extra controleren...');
-    const worker2=await Tesseract.createWorker('eng');
-    await worker2.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10',user_defined_dpi:'300'});
-    for(let k=0;k<ontbrekendeIndices.length;k++){
-      const i=ontbrekendeIndices[k];
-      status('Controle '+(k+1)+' van '+ontbrekendeIndices.length+'...');
-      const pic=maakOCRTile(cirkels[i]);
-      const r=await worker2.recognize(pic);
-      const txt=(r.data?.text||'').replace(/\D/g,' ').trim();
-      const mm=txt.match(/\d{1,3}/g)||[];
-      let best=null;
-      for(const m of mm){const n=Number(m);if(n>=1&&n<=140){const conf=Number(r.data?.confidence||0);if(!best||conf>best.conf)best={n,conf,text:m};}}
-      if(best)resultaten[i]=best;
-    }
-    await worker2.terminate();
-  }
-
-  const nums=resultaten.filter(x=>x).map(x=>x.n);
+  const nums=resultaten.filter(n=>n!==null);
   tekst.value=nums.join(' ');
   bereken();
 
   const unieke=uniekeGetallen(tekst.value);
-  const dubbel=nums.filter((n,i,a)=>a.indexOf(n)!==i);
+  const dubbele=nums.filter((n,i,a)=>a.indexOf(n)!==i);
   status(cirkels.length+' cirkels gevonden, '+unieke.length+' unieke nummers herkend.');
 
+  found.innerHTML='<b>Unieke nummers herkend ('+unieke.length+'):</b><br>'+unieke.join(', ')+
+    '<div class="small">OCR-resultaat: '+nums.length+' van '+cirkels.length+' cirkels kregen een nummer.</div>'+
+    (dubbele.length?'<div class="warn"><b>Dubbele OCR-resultaten:</b> '+[...new Set(dubbele)].join(', ')+'.</div>':'');
   found.classList.remove('hidden');
-  found.innerHTML +=
-    '<div class="small">Leesresultaten: '+nums.length+' van '+cirkels.length+' cirkels kregen een OCR-resultaat.</div>'+ 
-    (dubbel.length ? '<div class="warn"><b>Controle:</b> dubbele herkenningen: '+[...new Set(dubbel)].join(', ')+'.</div>' : '');
 
-  if(cirkels.length && unieke.length < cirkels.length){
+  if(unieke.length<cirkels.length){
     check.classList.remove('hidden');
-    check.innerHTML='<div class="warn"><b>Controle nodig:</b> '+(cirkels.length-unieke.length)+' nummers konden niet betrouwbaar worden onderscheiden van de gevonden cirkels. Gebruik de tekstbox om OCR-fouten handmatig te corrigeren voordat je Excel of e-mail gebruikt.</div>';
+    check.innerHTML='<div class="warn"><b>Controle nodig:</b> '+(cirkels.length-unieke.length)+' cijfers zijn niet uniek herkend. Corrigeer eventuele OCR-fouten in het tekstvak voordat je de ontbrekende nummers gebruikt.</div>';
   }
 }
 
