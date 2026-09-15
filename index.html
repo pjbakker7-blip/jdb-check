@@ -435,8 +435,8 @@ async function leesEenKeer(){
   if(failed || duplicateCount){
     found.innerHTML += '<div class="warn"><b>Controle nodig:</b> '+
       (failed?'Er zijn ongelezen cirkels. ':'')+
-      (duplicateCount?'Er zijn dubbele OCR-uitkomsten.'):'')+
-      ' Corrigeer de tekst hierboven indien nodig.</div>';
+      (duplicateCount?'Er zijn dubbele OCR-uitkomsten. ':'')+
+      'Corrigeer de tekst hierboven indien nodig.</div>';
   }else{
     found.innerHTML += '<div class="good"><b>Alle '+detected.length+' cirkels hebben een geldig nummer opgeleverd.</b></div>';
   }
