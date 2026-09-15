@@ -79,7 +79,7 @@ function bereken(){
   const alle=Array.from({length:140},(_,i)=>i+1);
   ontbrekend=alle.filter(n=>!gevonden.includes(n));
   result.classList.remove('hidden');
-  result.innerHTML='<b>Ontbrekend ('+ontbrekend.length+'):</b><br><span style="font-size:27px">'+ontbrekend.join(' &nbsp; ')+'</span>';
+  result.innerHTML='<b>Ontbrekend ('+ontbrekend.length+'):</b><br><div style="font-size:27px;line-height:1.45">'+ontbrekend.map(n=>'&bull; '+n).join('<br>')+'</div>';
   found.classList.remove('hidden');
   found.innerHTML='<b>Unieke nummers herkend ('+gevonden.length+'):</b><br>'+gevonden.join(', ');
   check.classList.remove('hidden');
@@ -440,12 +440,12 @@ mailBtn.onclick=async()=>{
     mailstatus.textContent='E-mail wordt verstuurd...';
     await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
       subject:'JdB ontbrekende nummers '+new Date().toLocaleDateString('nl-NL'),
-      message:'Overzicht van de ontbrekende nummers uit de JdB-controle.\n\nAantal herkende nummers: '+gevonden.length+'\nAantal ontbrekende nummers: '+ontbrekend.length+'\n\nOntbrekende nummers:\n'+ontbrekend.join(', '),
+      message:'Overzicht van de ontbrekende nummers uit de JdB-controle.\n\nAantal herkende nummers: '+gevonden.length+'\nAantal ontbrekende nummers: '+ontbrekend.length+'\n\nOntbrekende nummers:\n'+ontbrekend.join('\n'),
       to_email:'container@jdb-barendrecht.nl',
       datum:new Date().toLocaleString('nl-NL'),
       gevonden:gevonden.length,
       ontbrekend:ontbrekend.length,
-      lijst:ontbrekend.join(', ')
+      lijst:ontbrekend.join('\n')
     });
     mailstatus.textContent='E-mail is verzonden. Er is geen bijlage meegestuurd.';
   }catch(err){console.error(err);mailstatus.textContent='E-mail verzenden mislukt: '+(err.text||err.message||err);}
