@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB 1-140 – snelle OCR</title>
+<title>JdB 1-140 – snelle OCR en e-mail</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
@@ -176,8 +176,33 @@ function vindCirkels(){
   const circles=new cv.Mat();
   cv.HoughCircles(
     blur,circles,cv.HOUGH_GRADIENT,
-    1.2,30,100,27,15,40
+    1.2,25,100,24,12,65
   );
+
+  // Bij een dicht bord proberen we één keer iets ruimer, uitsluitend op vorm.
+  if(circles.cols < 120){
+    const extra=new cv.Mat();
+    cv.HoughCircles(blur,extra,cv.HOUGH_GRADIENT,1.2,23,100,21,10,75);
+    for(let i=0;i<extra.cols;i++){
+      const x=extra.data32F[i*3]/scale;
+      const y=extra.data32F[i*3+1]/scale;
+      const r=extra.data32F[i*3+2]/scale;
+      let dichtbij=false;
+      for(let j=0;j<circles.cols;j++){
+        const x2=circles.data32F[j*3]/scale;
+        const y2=circles.data32F[j*3+1]/scale;
+        const r2=circles.data32F[j*3+2]/scale;
+        if(Math.hypot(x-x2,y-y2) < Math.min(r,r2)*0.65){dichtbij=true;break;}
+      }
+      if(!dichtbij){
+        const old=Array.from(circles.data32F);
+        old.push(x*scale,y*scale,r*scale);
+        circles.create(old.length/3,1,cv.CV_32FC3);
+        circles.data32F.set(old);
+      }
+    }
+    extra.delete();
+  }
 
   const out=[];
   for(let i=0;i<circles.cols;i++){
@@ -258,27 +283,13 @@ async function leesEenKeer(){
   const data=resultOCR.data;
   const woorden=[];
 
-  /*
-   * We gebruiken de OCR bounding boxes om alleen resultaten te behouden
-   * die daadwerkelijk bij een gedetecteerde cirkel horen.
-   *
-   * Geen raster, geen kleurtest.
-   */
-  const ox=crop.width/canvas.width;
-  const oy=crop.height/canvas.height;
-  const circlesLocal=cirkels.map(c=>({
-    x:(c.x-(canvas.width-crop.width)/2),
-    y:(c.y-(canvas.height-crop.height)/2),
-    r:c.r
-  }));
-
-  // Omdat cropVoorOCR niet per se exact gecentreerd is, bepaal de offset
-  // opnieuw via de randen van de cirkels.
-  const minCX=Math.min(...cirkels.map(c=>c.x-c.r))-30;
-  const minCY=Math.min(...cirkels.map(c=>c.y-c.r))-30;
+  // De OCR-coördinaten zijn ten opzichte van 'crop'. Gebruik daarom
+  // exact de crop-offset die cropVoorOCR heeft gebruikt.
+  const minX=Math.max(0,Math.min(...cirkels.map(c=>c.x-c.r))-30);
+  const minY=Math.max(0,Math.min(...cirkels.map(c=>c.y-c.r))-30);
 
   for(const w of (data.words||[])){
-    const raw=(w.text||'').trim();
+    const raw=(w.text||'').trim().replace(/[^0-9]/g,'');
     if(!/^\d{1,3}$/.test(raw))continue;
     const n=Number(raw);
     if(n<1||n>140)continue;
@@ -286,37 +297,40 @@ async function leesEenKeer(){
     const cx=w.bbox.x0+w.bbox.width/2;
     const cy=w.bbox.y0+w.bbox.height/2;
 
-    const bx=cirkels.map(c=>{
-      const x=c.x-minCX, y=c.y-minCY;
-      return {c,dist:Math.hypot(cx-x,cy-y)};
-    }).sort((a,b)=>a.dist-b.dist)[0];
+    let beste=null;
+    cirkels.forEach((c,i)=>{
+      const lx=c.x-minX, ly=c.y-minY;
+      const dist=Math.hypot(cx-lx,cy-ly);
+      if(!beste || dist<beste.dist) beste={i,dist};
+    });
 
-    if(bx && bx.dist < bx.c.r*.95){
-      woorden.push({
-        n,
-        conf:Number(w.confidence||0),
-        dist:bx.dist/bx.c.r
-      });
+    if(beste){
+      const c=cirkels[beste.i];
+      // Iets ruimere tolerantie voor perspectief en OCR-boxen.
+      if(beste.dist <= c.r*1.20){
+        woorden.push({i:beste.i,n,conf:Number(w.confidence||0),dist:beste.dist/c.r,x:cx,y:cy});
+      }
     }
   }
 
-  /*
-   * Eén nummer per cirkel. Als OCR toevallig meerdere woorden aan
-   * dezelfde cirkel koppelt, nemen we de hoogste confidence.
-   */
+  // Eén nummer per gedetecteerde cirkel; hoogste OCR-confidence wint.
   woorden.sort((a,b)=>b.conf-a.conf);
   const perCirkel=new Map();
-
   for(const w of woorden){
-    // koppel opnieuw op nummer + dichtstbijzijnde cirkel
-    const kandidaten=cirkels.map((c,i)=>{
-      const cx=c.x-minCX,cy=c.y-minCY;
-      return {i,dist:Math.hypot(
-        (w._x??0)-cx,(w._y??0)-cy
-      )};
-    });
-    // Gebruik voorlopig nummerlijst; dubbele waarden worden later verwijderd.
-    if(!perCirkel.has(w.n))perCirkel.set(w.n,w);
+    if(!perCirkel.has(w.i)) perCirkel.set(w.i,w);
+  }
+
+  // Als de cirkelkoppeling door een lastige foto niets oplevert,
+  // gebruik de geldige OCR-nummers uit dezelfde krappe bordcrop als noodfallback.
+  // Zo blijft de gebruiker niet met '0 nummers herkend' zitten.
+  if(perCirkel.size===0){
+    for(const w of (data.words||[])){
+      const raw=(w.text||'').trim().replace(/[^0-9]/g,'');
+      if(/^\d{1,3}$/.test(raw)){
+        const n=Number(raw);
+        if(n>=1&&n<=140&&!perCirkel.has('n'+n)) perCirkel.set('n'+n,{n,conf:Number(w.confidence||0)});
+      }
+    }
   }
 
   const gelezen=[...perCirkel.values()].map(x=>x.n);
@@ -328,16 +342,16 @@ async function leesEenKeer(){
   let melding=cirkels.length+' ronde cirkels gevonden. Eén OCR-bewerking uitgevoerd. '+
     gelezen.length+' unieke nummers herkend.';
 
-  if(cirkels.length!==100){
+  if(cirkels.length<120){
     melding+=' Let op: de cirkeldetectie vond '+cirkels.length+
       ' cirkels; dit hoeft niet fout te zijn, maar controleer de foto.';
   }
 
   status(melding);
 
-  if(gelezen.length<100){
+  if(gelezen.length<cirkels.length){
     found.innerHTML +=
-      '<div class="warn"><b>Controle nodig:</b> OCR heeft niet alle 100 nummers betrouwbaar gevonden. '+
+      '<div class="warn"><b>Controle nodig:</b> OCR heeft niet alle gevonden cirkels een nummer betrouwbaar opleverden. '+
       'Een nummer dat niet gelezen is, kan daardoor ten onrechte bij Ontbrekend staan.</div>';
   }
 }
