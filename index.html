@@ -29,7 +29,7 @@ canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#fff
 <body>
 <main>
 <h2>JdB 1–140</h2>
-<p><strong>Versie 19:</strong> ronde cirkels worden alleen op vorm gevonden. Daarna worden de gevonden cirkels automatisch per rij gegroepeerd. De software zoekt cirkels op vorm en leest daarna alleen het heldere cijfergebied binnen iedere cirkel. Er wordt één Tesseract-worker gebruikt, zodat OCR veel sneller is dan steeds een nieuwe OCR-engine starten. Er wordt geen vast 10×10- of 14×10-raster gebruikt.</p>
+<p><strong>Versie 21:</strong> ronde cirkels worden alleen op vorm gevonden. Daarna worden de gevonden cirkels automatisch per rij gegroepeerd. De software zoekt cirkels op vorm en leest daarna alleen het heldere cijfergebied binnen iedere cirkel. Er wordt één Tesseract-worker gebruikt, zodat OCR veel sneller is dan steeds een nieuwe OCR-engine starten. Er wordt geen vast 10×10- of 14×10-raster gebruikt.</p>
 <input id="foto" type="file" accept="image/*" capture="environment">
 <canvas id="beeld"></canvas>
 <div id="status">Klaar voor een foto.</div>
@@ -365,18 +365,12 @@ async function leesEenKeer(){
     if(!retry){
       variants.push({canvas:maakVariant(205,false), psms:[10,13]});
     }else{
-      // Fallbacks die juist goed bleken voor o.a. 2, 32, 33, 63 en 77.
-      for(const th of [155,165,175,185,195,205,220]){
-        variants.push({canvas:maakVariant(th,false), psms:[10,7,8,13]});
-        variants.push({canvas:maakVariant(th,true), psms:[10,7,13]});
-      }
-      // Ook een zachte grijswaardeversion voor cijfers met dunne randen.
-      const smooth=document.createElement('canvas');
-      smooth.width=w*4;smooth.height=h*4;
-      const sg=smooth.getContext('2d');
-      sg.imageSmoothingEnabled=true;
-      sg.drawImage(cc,0,0,smooth.width,smooth.height);
-      variants.push({canvas:smooth, psms:[10,7,13]});
+      // Beperkte tweede poging: maximaal 4 extra OCR-bewerkingen per moeilijke cirkel.
+      // Zo blijft de app responsief op Android.
+      variants.push({canvas:maakVariant(185,false), psms:[10]});
+      variants.push({canvas:maakVariant(205,false), psms:[13]});
+      variants.push({canvas:maakVariant(185,true), psms:[10]});
+      variants.push({canvas:maakVariant(205,true), psms:[13]});
     }
 
     let best=null;
