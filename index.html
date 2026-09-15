@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB 1–140 – versie 12</title>
+<title>JdB 1–140 – versie 14</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -57,9 +57,9 @@ const mailBtn=document.getElementById('mail');
 const mailstatus=document.getElementById('mailstatus');
 
 // Vul deze drie velden later in zodra EmailJS is ingesteld.
-const EMAILJS_PUBLIC_KEY='';
-const EMAILJS_SERVICE_ID='';
-const EMAILJS_TEMPLATE_ID='';
+const EMAILJS_PUBLIC_KEY='m1hQVTUwI0HgGdgmI';
+const EMAILJS_SERVICE_ID='service_7gioqpl';
+const EMAILJS_TEMPLATE_ID='template_t0gb12w';
 
 let bestand=null;
 let cirkels=[];
@@ -360,26 +360,24 @@ document.getElementById('lees').onclick=()=>leesEenKeer();
 document.getElementById('bereken').onclick=()=>bereken();
 excelBtn.onclick=()=>{if(!excelBlob)maakExcel();const url=URL.createObjectURL(excelBlob);const a=document.createElement('a');a.href=url;a.download=excelNaam;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status('Excelbestand aangemaakt.');};
 
-function blobToDataUri(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob);});}
-
 mailBtn.onclick=async()=>{
-  if(!excelBlob)maakExcel();
   if(!EMAILJS_PUBLIC_KEY||!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID){
     mailstatus.textContent='E-mail is nog niet ingesteld. Vul eerst de EmailJS Public Key, Service ID en Template ID in de HTML in.';
     return;
   }
   try{
     emailjs.init({publicKey:EMAILJS_PUBLIC_KEY});
-    mailstatus.textContent='Excel wordt per e-mail verstuurd...';
-    const dataUri=await blobToDataUri(excelBlob);
+    mailstatus.textContent='E-mail wordt verstuurd...';
     await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
-      to_email:'container@jdb-barendrecht.nl, pjbakker7@outlook.com',
       subject:'JdB ontbrekende nummers '+new Date().toLocaleDateString('nl-NL'),
-      message:'Bijgevoegd het Excelbestand met de ontbrekende nummers.',
-      attachment:dataUri,
-      filename:excelNaam
+      message:'Overzicht van de ontbrekende nummers uit de JdB-controle.\n\nAantal herkende nummers: '+gevonden.length+'\nAantal ontbrekende nummers: '+ontbrekend.length+'\n\nOntbrekende nummers: '+ontbrekend.join(', '),
+      to_email:'container@jdb-barendrecht.nl',
+      datum:new Date().toLocaleString('nl-NL'),
+      gevonden:gevonden.length,
+      ontbrekend:ontbrekend.length,
+      lijst:ontbrekend.join(', ')
     });
-    mailstatus.textContent='E-mail is verzonden naar de twee adressen.';
+    mailstatus.textContent='E-mail is verzonden. Er is geen bijlage meegestuurd.';
   }catch(err){console.error(err);mailstatus.textContent='E-mail verzenden mislukt: '+(err.text||err.message||err);}
 };
 
