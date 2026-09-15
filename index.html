@@ -1,49 +1,26 @@
 <!doctype html>
-<html lang="nl">
-<head>
-<meta charset="utf-8">
+<html lang="nl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB 1–140 – versie 19</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<title>JdB 1–140 – versie 22</title>
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial,sans-serif;margin:0;padding:14px;background:#f3f3f3;color:#111}
-main{max-width:780px;margin:auto}
-h2{margin:2px 0 8px}
-p{font-size:14px;color:#555;line-height:1.45}
-button,input,textarea{width:100%;font-size:18px;padding:14px;margin-top:9px;border-radius:11px;border:1px solid #aaa}
-button{font-weight:700;border:0;cursor:pointer}
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:14px;background:#f3f3f3;color:#111}main{max-width:780px;margin:auto}
+h2{margin:2px 0 8px}p{font-size:14px;color:#555;line-height:1.45}button,input,textarea{width:100%;font-size:18px;padding:14px;margin-top:9px;border-radius:11px;border:1px solid #aaa}button{font-weight:700;border:0;cursor:pointer}
 .black{background:#111;color:#fff}.blue{background:#1565c0;color:#fff}.green{background:#138a2e;color:#fff}.orange{background:#d97706;color:#fff}
-#status,#result,#found,#check{background:#fff;border-radius:11px;padding:12px;margin-top:12px}
-#result{font-size:23px;font-weight:700;line-height:1.55}
-#found{font-size:15px;line-height:1.55}
-textarea{min-height:110px}
-canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#fff}
-.hidden{display:none}.small{font-size:13px;color:#666}.warn{background:#fff3cd;padding:10px;border-radius:9px;margin-top:10px}
-.good{background:#e8f5e9;padding:10px;border-radius:9px;margin-top:10px}
-</style>
-</head>
-<body>
-<main>
+#status,#result,#found,#check{background:#fff;border-radius:11px;padding:12px;margin-top:12px}#result{font-size:23px;font-weight:700;line-height:1.55}#found{font-size:15px;line-height:1.55}textarea{min-height:160px}canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#fff}.hidden{display:none}.small{font-size:13px;color:#666}.warn{background:#fff3cd;padding:10px;border-radius:9px;margin-top:10px}.good{background:#e8f5e9;padding:10px;border-radius:9px;margin-top:10px}
+</style></head><body><main>
 <h2>JdB 1–140</h2>
-<p><strong>Versie 21:</strong> ronde cirkels worden alleen op vorm gevonden. Daarna worden de gevonden cirkels automatisch per rij gegroepeerd. De software zoekt cirkels op vorm en leest daarna alleen het heldere cijfergebied binnen iedere cirkel. Er wordt één Tesseract-worker gebruikt, zodat OCR veel sneller is dan steeds een nieuwe OCR-engine starten. Er wordt geen vast 10×10- of 14×10-raster gebruikt.</p>
-<input id="foto" type="file" accept="image/*" capture="environment">
-<canvas id="beeld"></canvas>
+<p><strong>Versie 22:</strong> alleen cirkels worden op vorm gezocht. Kleur wordt niet gebruikt. De cijfers worden na segmentatie herkend met een kleine ingebouwde beeldclassificatie. Er wordt geen vast 10×10- of 14×10-raster gebruikt en er wordt geen Tesseract gebruikt.</p>
+<input id="foto" type="file" accept="image/*" capture="environment"><canvas id="beeld"></canvas>
 <div id="status">Klaar voor een foto.</div>
-<textarea id="tekst" placeholder="Hier verschijnen de herkende nummers. Je kunt ze corrigeren en daarna opnieuw berekenen."></textarea>
-<button id="lees" class="black">Foto opnieuw lezen</button>
-<button id="bereken" class="blue">Bereken ontbrekende nummers</button>
-<div id="result" class="hidden"></div>
-<div id="found" class="hidden"></div>
-<div id="check" class="hidden"></div>
-<button id="excel" class="green hidden">Excel downloaden</button>
-<button id="mail" class="orange hidden">Excel mailen</button>
+<textarea id="tekst" placeholder="Hier verschijnen de herkende nummers. Eén nummer per spatie. Corrigeer hier eventueel een nummer."></textarea>
+<button id="lees" class="black">Foto opnieuw lezen</button><button id="bereken" class="blue">Bereken ontbrekende nummers</button>
+<div id="result" class="hidden"></div><div id="found" class="hidden"></div><div id="check" class="hidden"></div>
+<button id="excel" class="green hidden">Excel downloaden</button><button id="mail" class="orange hidden">Ontbrekende nummers mailen</button>
 <div id="mailstatus" class="small" style="margin-top:8px"></div>
-</main>
-<script>
+</main><script>
 const foto=document.getElementById('foto');
 const canvas=document.getElementById('beeld');
 const ctx=canvas.getContext('2d');
@@ -55,25 +32,23 @@ const check=document.getElementById('check');
 const excelBtn=document.getElementById('excel');
 const mailBtn=document.getElementById('mail');
 const mailstatus=document.getElementById('mailstatus');
-
-// Vul deze drie velden later in zodra EmailJS is ingesteld.
 const EMAILJS_PUBLIC_KEY='m1hQVTUwI0HgGdgmI';
 const EMAILJS_SERVICE_ID='service_7gioqpl';
 const EMAILJS_TEMPLATE_ID='template_t0gb12w';
-
-let bestand=null;
-let cirkels=[];
-let gevonden=[];
-let ontbrekend=[];
-let excelBlob=null;
-let excelNaam='';
-
-function status(s){statusEl.textContent=s;}
-
-function uniekeGetallen(s){
-  return [...new Set((s.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);
+const MODEL_LABELS='00000111112222233333444445555566666777778888899999';
+const MODEL_B64='AAAAAAAACAj///////////8IAAAAAAAAAAAAAAAP////////////////DwAAAAAAAAAAABf//////////////////xcAAAAAAAAAH/////////////////////8fAAAAAAAA////////////////////////AAAAAAAu/////////9HR0dH/////////LgAAAAD/////////yQAAAADJ/////////wAAAAD/////////AAAAAAAA/////////z4AAEb///////+5AAAAAAAAuf////////8AAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////9kbP////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP////////////////////8AAAAAAAAAAP//////////Xf////////8AAAAAAAAAAP////////9dAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////8AAP////////+5AAAAAAAAuf////////8AAD7/////////AAAAAAAA/////////z4AAAD/////////yQAAAADJ/////////wAAAAD//////////9HR0dH//////////wAAAAAn////////////////////////JwAAAAAAH/////////////////////8fAAAAAAAAAP///////////////////xcAAAAAAAAAAA8P////////////////DwAAAAAAAAAAAAAACP///////////wgIAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAdP//////////////iwAAAAAAAAAAAACL/////////////////6IAAAAAAAAAAKL///////////////////+5AAAAAAAAuf//////////////////////0QAAAAAAuf//////////////////////0QAAAADR////////0QAAAADR/////////+gAAADR////////0QAAAAAAuf///////+gAAOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAACL//////////////////+5AAAAAAAAAACL/////////////////6IAAAAAAAAAAACL/////////////////6IAAAAAAAAAAACL/////////////////6IAAAAAAAAAAACL/////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AADR////////0QAAAAAAuf///////+gAAADR////////0QAAAAAAuf///////+gAAAAAuf//////////AOj/////////0QAAAAAAuf//////////////////////0QAAAAAAAKL///////////////////+5AAAAAAAAAACL/////////////////6IAAAAAAAAAAAAAdP//////////////iwAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAGCLT/////////qQgGAAAAAAAAAAAAAA3L///////////////ADAAAAAAAAAAAFNf/////////////////zBMAAAAAAAAA3v///////////////////9gbAAAAAAAj4//////////////////////jIwAAAADp////////49HR0eX/////////6QAAADTt///////cTwAAAFfe////////7TQAAPT///////9YAAAAAABM1v////////QARvf///////9YAAAAAAAAWP////////QA/////////8k+AAAAAAAAWf////////QA/////////00AAAAAAAAAWf////////QA/////////00AAAAAAAAAOL7///////hd/////////04AAAAAAAAAAE7//////////////////00AAAAAAAAAAE3//////////////////04AAAAAAAAAAE7//////////////////00AAAAAAAAAAE3//////////////////00AAAAAAAAAAE3//////////////////04AAAAAAAAAAE7//////////////////00AAAAAAAAAAE3//////////////////04AAAAAAAAANrn//////////////////00AAAAAAAAAWP////////hd/////////00AAAAAAAAAWf////////QA/////////8k+AAAAAAAAWf////////QARvf///////9YAAAAAAAAWP////////QAAPT///////9YAAAAAABM1v//////7jsAAPT////////cTwAAAFfe////////6QAAACzt////////49HR0eX////////kKgAAAADp///////////////////////eAAAAAAAc4v///////////////////9gbAAAAAAAAFNf/////////////////zBMAAAAAAAAAAA0PwP/////////////ADAAAAAAAAAAAAAAABgip////////qQgGAAAAAAAAAAAAAAAAAA8P////////Dw8PAAAAAAAAAAAAAAAAHv//////////////HgAAAAAAAAAAAAAt/////////////////y0AAAAAAAAAADz///////////////////88AAAAAAAAS///////////////////////AAAAAAAA//////////+lpf//////////WgAAAABp/////////5YAAJaW/////////wAAAAD/////////hwAAAAAA/////////3gAAIf/////////AAAAAAAAeP////////8AAP////////9pAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////+0AP////////8AAAAAAAAAADz/////////AP////////8AAAAAAAAAAAD/////////AP////////8AAAAAAAAAAAD/////////AP////////8AAAAAAAAAAAD///////////////////8AAAAAAAAAAAD///////////////////8AAAAAAAAAAAD/////////0v////////8AAAAAAAAAAAD/////////AP////////8AAAAAAAAAADz/////////AP////////8AAAAAAAAAAP////////+0AP////////8AAAAAAAAAAP////////8AAP////////9pAAAAAAAAAP////////8AAIf/////////AAAAAAAAeP////////8AAAD/////////hwAAAAAA/////////3gAAAD//////////5YAAJaW/////////wAAAABa//////////+lpf//////////WgAAAAAA////////////////////////AAAAAAAAPP////////////////////88AAAAAAAAAC3//////////////////y0AAAAAAAAAAAAeHv////////////8eHgAAAAAAAAAAAAAAAA8P////////Dw8AAAAAAAAAAAAAAAAAAABG////////RgAAAAAAAAAAAAAAAAAAdP//////////////iwAAAAAAAAAAAKL//////////////////6IAAAAAAAAAuf////////////////////+5AAAAAAAAuf////////////////////+5AAAAAADR////////////////////////0QAAAADR////////0QAAAADR/////////+gAAOj///////+5AAAAAAAAuf///////+gAAOj///////+5AAAAAAAAuf///////+gAAOj///////+5AAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL//////////////////6IAAAAAAAAAAKL/////////AOj///////+5AAAAAAAAAKL/////////AOj///////+5AAAAAAAAuf///////+gAAOj///////+5AAAAAAAAuf///////+gAAOj/////////0QAAAADR/////////+gAAADR////////////////////////0QAAAADR////////////////////////0QAAAAAAuf////////////////////+5AAAAAAAAAKL//////////////////6IAAAAAAAAAAACL////////////////iwAAAAAAAAAAAAAAAF3//////////10AAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAABJ/////////////wAAAAAAAAAAAAC2/////////////////wAAAAAAAAAAANv//////////////////wAAAAAAAAAAANv//////////////////wAAAAAAAAAAANv//////////////////wAAAAAAAAAAANv//////////////////wAAAAAAAAAAANv//////////////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAANv//////////////////////////9sA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAALb///////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAG3///////////////8kAAAAAAAAAAC2//////////////////8kAAAAAAAAANv///////////////////8kAAAAAAAAANv///////////////////8kAAAAAAAAANv///////////////////8kAAAAAAAAAAC2//////////////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAAA2/////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAANv/////////////////////////////////////////////////////////////ANv/////////////////////////////ANv/////////////////////////////ANv/////////////////////////////ANv/////////////////////////////AAAAAAAAAAAAZv///////8wAAAAAAAAAAAAAAAAA/////////////8wAAAAAAAAAAAAAZv///////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAA/////////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAAAAAAAAAAAMz//////////8wAAAAAAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAZv///////8wAAAAAAAAAAAAAAAAA9/f3+v///////8wAAAAAAAAAAACP7+/v/////////////8wAAAAAAAAAALj1/////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAMz//////////////////8wAAAAAAAAAAC46Ojo6Ojqw/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////8wAAAAAAAAAAAAAAAAAAACZ/////////9YxAAAAAAAAKSkpKSkpKSmp////////////KSkpKSkp////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAAAAk/wAAAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAG3//////////////wAAAAAAAAAAAAC2//////////////////8kAAAAAAAAANv///////////////////8kAAAAAAAAANv///////////////////8kAAAAAAAAANv//////////////////wAAAAAAAAAAAAC2/////////////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD//////////wAAAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAAAAAAAAAAAAD///////////8kAAAAAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////ANv//////////////////////////9sAAAAAAAYICLT/////////qQgGAAAAAAAAAAAADdX////////////////ADAAAAAAAAAAV4f//////////////////zBMAAAAAAB7r/////////////////////9gbAAAAJ/X////////////////////////eAAAA0f3////////h0dHR5//////////kKgAAAMD6////18lGAAAAYOD/////////6QAAAACw9//OMgAAAAAAAFTZ////////6QAAAAAAobkoAAAAAAAAAABk////////70MAAAAAAAAAAAAAAAAAAABj//////////QAAAAAAAAAAAAAAAAAAABk//////////QAAAAAAAAAAAAAAAAAAABk////////95sAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAC+l////////6QAAAAAAAAAAAAAAAAAAAG/////////wfwAAAAAAAAAAAAAAAAAAO7X////////eAAAAAAAAAAAAAAAAAABFvv///////+hsAAAAAAAAAAAAAAAAAE/I/////////9MAAAAAAAAAAAAAAAAAAJD/////////31kAAAAAAAAAAAAAAAAAXtP////////WTwAAAAAAAAAAAAAAAABq2v////////+8AAAAAAAAAAAAAAAAAHbh/////////8s/AAAAAAAAAAAAAAAAg+f/////////wTYAAAAAAAAAAAAAAACR7f////////+2LQAAAAAAAAAAAAAAAKDx/////////6smAAAAAAAAAAAAAAAAr/X/////////nx8AAAAAAAAAAAAAAAC/+f//////////6dHR0dHR0dHR0dHRAM/7////////////////////////////4P7/////////////////////////////F/X/////////////////////////////8P7/////////////////////////////////////////////////////////////AAAAAAAGCAgInv//iQgICAUAAAAAAAAAAAAADQ/L/////////////7YLAAAAAAAAAAAV4f/////////////////CEgAAAAAAAB7r////////////////////zhoAAAAAJ/X//////////////////////9kiAAAA///////////////////////////eAAAAycn6////18nJycnJ4//////////lMQAAAACw9//OMgAAAAAAXNz/////////6QAAAAAAobkoAAAAAAAAAFHU////////6QAAAAAAAAAAAAAAAAAAAABj////////6QAAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAACyh///////yjQAAAAAAAAAAAAAAAAAAAG/////////eAAAAAAAAAAAAAAAAAAAAN7D////////eAAAAAAAAAAAAAAAAAAAAev///////+lyAAAAAAAAAAAAAAAAAABFvv///////9MAAAAAAAAAAAAAAAAAAE/I////////4WAAAAAAAAAAAAAAAAAAWdD////////ZVQAAAAAAAAAAAAAAAABl2P////////+8AAAAAAAAAAAAAAAAAHHf/////////85FAAAAAAAAAAAAAAAAfuX/////////xDsAAAAAAAAAAAAAAACL6/////////+5MgAAAAAAAAAAAAAAAJnw/////////64qAAAAAAAAAAAAAAAAqPT/////////oyMAAAAAAAAAAAAAAAC3+P////////+WHFfJycnJycnJycAAAMj7///////////n0eX///////////3R2P3///////////////////////////Un//////////////////////////////QA//////////////////////////////QA//////////////////////////////QACAgICAjJSAgICAgICAgICAgICAgIHfQAAAAAAAAAvf//////////pgAAAAAAAAAAAAAAANP///////////////+9AAAAAAAAAADp////////////////////yAAAAAAAAPT//////////////////////9MAAAAA///////////////////////////eAAAA///////////////////////////eAAAAAPT//////04AAAAAev//////////6QAAAADp//83AAAAAAAAAG//////////6QAAAAAA3iwAAAAAAAAAAG//////////6QAAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAG//////////6QAAAAAAAAAAAAAAAAAAAG/////////eAAAAAAAAAAAAAAAAAAAAev/////////eAAAAAAAAAAAAAAAAAAAAev/////////eAAAAAAAAAAAAAAAAAACF/////////9MAAAAAAAAAAAAAAAAAAJD/////////yAAAAAAAAAAAAAAAAAAAm///////////yAAAAAAAAAAAAAAAAACm//////////+9AAAAAAAAAAAAAAAAALH//////////7EAAAAAAAAAAAAAAAAAALH/////////pgAAAAAAAAAAAAAAAAAAvf////////+bAAAAAAAAAAAAAAAAAADI/////////5AAAAAAAAAAAAAAAAAA3v//////////hQAAAAAAAAAAAAAAAADp//////////96AAAAAAAAAAAAAAAAAPT///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////QA//////////////////////////////QA//////////////////////////////QAAAAAAACL/////////////10AAAAAAAAAAAAAuf//////////////////iwAAAAAAAADR/////////////////////6IAAAAAAOj///////////////////////+5AAAA////////////////////////////0QAA////////////////////////////0QAAAOj/////iwAAAAAAAOj/////////0QAAAADR//90AAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAOj/////////0QAAAAAAAAAAAAAAAAAAAOj///////+5AAAAAAAAAAAAAAAAAAAA//////////+5AAAAAAAAAAAAAAAAABf//////////6IAAAAAAAAAAAAAAAAALv//////////iwAAAAAAAAAAAAAAAABG////////////iwAAAAAAAAAAAAAAAF3///////////90AAAAAAAAAAAAAAAAdP///////////10AAAAAAAAAAAAAAACL////////////RgAAAAAAAAAAAAAAAKL///////////8uAAAAAAAAAAAAAAAAuf///////////xcAAAAAAAAAAAAAAADR////////////AAAAAAAAAAAAAAAAAOj/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAECAhL/////x4ICAgEAAAAAAAAAAAACw+S//////////////98CAAAAAAAAAATwP//////////////////lRcRAAAAHx/W//////////////////////+5AAAA///////////////////////////EIAAA////////////9tX/////////////2SoAycn1////5snJpBLJyfr//////////+gAAACe7v/daQAAAAAAALD0/////////+gAAAAAh7lUAAAAAAAAAADQ/////////+gAAAAAAAAAAAAAAAAAAACR6v///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAABZ1////////+gAAAAAAAAAAAAAAAAAAADR////////6n4AAAAAAAAAAAAAAAAAAHDn////////0AAAAAAAAAAAAAAAAAAAg/T////////bZQAAAAAAAAAAAAAAAAAA//////////+5AAAAAAAAAAAAAAAAAA2T/////////8lPAAAAAAAAAAAAAAAAHKT/////////uUAAAAAAAAAAAAAAAAAss/////////+mMwAAAAAAAAAAAAAAAD7B//////////90AAAAAAAAAAAAAAAAUc7//////////44jAAAAAAAAAAAAAHa52f//////////eBkAAAAAAAAAAAAAjOj///////////9hEQAAAAAAAAAAAACk8P///////////0gKAAAAAAAAAAAAAL72/////////////9XR0dHR0dHR0dHR2Pv/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAwPwP//////////qw8LAAAAAAAAAAAAGtj////////////////EHhkAAAAAACst4////////////////////9onAAAAAPT////////////////////////eAAAAAPT////////////////////////nRAAAAJ73///////EpaWl0P//////////6QAAAACJ8f//sZY0AAAASMT/////////6QAAAAAAdeqhIwAAAAAAADu2////////83MAAAAAAGMaAAAAAAAAAABk//////////QAAAAAAAAAAAAAAAAAAABk////////8mQAAAAAAAAAAAAAAAAAAEjI////////6QAAAAAAAAAAAAAAAAAAVtX/////////6QAAAAAAAAAAAAAAAG7D3//////////mNwAAAAAAAAAAAJLS0uv//////////9onAAAAAAAAAAAAALH/////////////zhkAAAAAAAAAAAAAALH////////////ADAAAAAAAAAAAAAAAALH//////////////9UNAAAAAAAAAAAAAJ3h4eHw///////////iGwAAAAAAAAAAAAAAAABu0ub/////////7SsAAAAAAAAAAAAAAAAAAFXa//////////QAAAAAAAAAAAAAAAAAAABGzv////////dLAAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWP//////////AAAAaHgaAAAAAAAAAAAAWP//////////AAB77/+hIwAAAAAAAAA1sP////////l4AJD2////sZaWlpaWlpa///////////QApfv///////////////////////////QA////////////////////////////70gAPPf////////////////////////mNwAAACst4////////////////////9onAAAAAAAAGtj////////////////EHhkAAAAAAAAAAAwPDw+r/////5YPDw8LAAAAAAAAAAAAAAAABggICJP/iQgICAgGAAAAAAAAAAAAAA0PwP/////////////ADAAAAAAAAAAVF9f/////////////////zBcUAAAAAB7r///////////////////////iHAAAAPT/////////////////////////6QAAAMj7/////////+Xp////////////7SwAAAC3+P///9nJyVdpyeD///////////QAAAAAqPT/0TsAAAAAAFTZ//////////QAAAAAAJm5MAAAAAAAAABk//////////QAAAAAAAAAAAAAAAAAAABj//////////QAAAAAAAAAAAAAAAAAAABk//////////QAAAAAAAAAAAAAAAAAACic////////95sAAAAAAAAAAAAAAAA0ZKf////////yjQAAAAAAAAAAAEtsbGy5///////////eAAAAAAAAAAAAALH/////////////5ot5AAAAAAAAAAAAALH/////////////yAAAAAAAAAAAAAAAALH/////////////5INyAAAAAAAAAAAAALH////////////////wfwAAAAAAAAAAAEtsbGy5////////////9owAAAAAAAAAAAAAAAA0ZGSh//////////QAAAAAAAAAAAAAAAAAAAAklf////////uiAAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWP//////////AAAAqMHBMgAAAAAAAAAAWP//////////AAC3+P//1z0AAAAAAABP3P//////////AMj7/////9/R0dHR0dHj//////////Yu2P3///////////////////////////QAH/X/////////////////////////6x4AABbr///////////////////////hFQAAAAAO4P///////////////////9UNAAAAAAAABwgIvv///////////7QICAYAAAAAAAAAAAAAdP////////////90AAAAAAAAAAAAAKL//////////////////6IAAAAAAAAAuf////////////////////+5AAAAAOj/////////////////////////0QAAAOj/////////////////////////0QAAAADR/////////////////////////+gAAAAAuf///6IAAAAAAADR/////////+gAAAAAAKL/iwAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAA////////////0QAAAAAAAAAAAF3///////////////+5AAAAAAAAAAAAAF3//////////////6IAAAAAAAAAAAAAAF3/////////////iwAAAAAAAAAAAAAAAF3///////////////+5AAAAAAAAAAAAAF3/////////////////0QAAAAAAAAAAAAAAABf//////////////+gAAAAAAAAAAAAAAAAAAADR////////////AAAAAAAAAAAAAAAAAAAAuf//////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AADR//90AAAAAAAAAAAAAKL/////////AADR/////6IAAAAAAAAAuf//////////AOj//////////////////////////////////////////////////////////+gAAOj/////////////////////////0QAAAADR//////////////////////+5AAAAAAAAuf///////////////////6IAAAAAAAAAAAAAdP///////////10AAAAAAAAAAAAAAAUIeP////////////94CAUAAAAAAAAND6j//////////////////6gLAAAAABXV///////////////////////AEwAAAOj/////////////////////////0QAAAMX4////////+NjY////////////2CMAAACr8v///+7RqwAA0dH2/////////+gAAAAAkuvhyYAAAAAAAADQ/////////+gAAAAAAHtYAAAAAAAAAACe7v///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAA/zv///////+gAAAAAAAAAAAAAAAAAAE3g/////////+gAAAAAAAAAAAAAAAAAXfD/////////7pQAAAAAAAAAACVkZGRk///////////kfgAAAAAAAAAAAF3//////////////9hrAAAAAAAAAAAAAF3/////////////ylgAAAAAAAAAAAAAAF3/////////////w3xaAAAAAAAAAAAAAF3////////////////dawAAAAAAAAAAACp0dHR0////////////6n4AAAAAAAAAAAAAAAAAbGzk//////////WTAAAAAAAAAAAAAAAAAABS1f//////////AAAAAAAAAAAAAAAAAAAAQ8T/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AACYublUAAAAAAAAAAAAh+b/////////ALD0///dwXsAAAAAAAAAuf//////////AOj//////+vJycnJycnJ8P//////////0fv//////////////////////////+wuJ+v/////////////////////////2CMAABzW///////////////////////CGQAAAAATwP///////////////////6sRAAAAAAAACw+S//////////////98DwoAAAAAAAAAAAAECAgINP///x4ICAgEAAAAAAAAAAAAAAAECAhL////////SwgIBAAAAAAAAAAACw+S////////////////kgoAAAAAAAATwP///////////////////6sRAAAAABzW///////////////////////CGQAAAOj/////////////////////////2CMAAL72///////y0dHR0fv//////////+gAAACk8P//5smSAAAAALf1/////////+gAAAAAjOjdaQAAAAAAAACe7v///////+gAAAAAAHZUAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAAAAuf///////+gAAAAAAAAAAAAAAAAAAABG0f///////+gAAAAAAAAAAAAAAAAAAFTi////////7pQAAAAAAAAAAAAbZGRkZPH/////////0AAAAAAAAAAAACeU///////////////heAAAAAAAAAAAAF3/////////////yotlAAAAAAAAAAAAAF3/////////////w08AAAAAAAAAAAAAAF3//////////////9KDawAAAAAAAAAAAF3/////////////////6n4AAAAAAAAAACdsbGxsbPH//////////+gAAAAAAAAAAAAAAAAAAFtk1f////////abAAAAAAAAAAAAAAAAAAAAQ8T/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAh7lUAAAAAAAAAAAAAKL/////////AACe7v/daQAAAAAAAAAAjOj/////////ALf1////5smSAAAAAACk8P//////////0fv////////y0dHR0dH2/////////+wu/////////////////////////////+gAH+v/////////////////////////1hwAABXV///////////////////////AEwAAAAAND6j/////////////////kg8LAAAAAAAAAAUICGH/////////SwgIBAAAAAAAAAAAAAAAAAAAAAB6//////////8pAAAAAAAAAAAAAAAAAHD///////////8pAAAAAAAAAAAAAAAAZv////////////8pAAAAAAAAAAAAAAAAZv////////////8pAAAAAAAAAAAAAABc//////////////8pAAAAAAAAAAAAAFL///////////////8pAAAAAAAAAAAAAFL///////////////8pAAAAAAAAAAAAR/////////////////8pAAAAAAAAAAA9////////eo////////8pAAAAAAAAAAA9////////eo////////8pAAAAAAAAADP///////+FAI////////8pAAAAAAAAKf////////+FAI////////8pAAAAAAAAKf///////48AAI////////8pAAAAAAAf////////mQAAAI////////8pAAAAAAAf////////mQAAAI////////8pAAAAABT///////+jAAAAAI////////8pAAAACv////////+jAAAAAI////////8pAAAACv///////60AAAAAAI////////8pAAAA/////////60AAAAAAI////////8pAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAhf//////////HwAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAAAAAAAA//8AAAAAAAAAAAAAAAAAAAD/////////////AAAAAAAAAAAAAAAAAAD/////////////AAAAAAAAAAAAAAAAAP//////////////AAAAAAAAAAAAAAAA////////////////AAAAAAAAAAAAAAAA////////////////AAAAAAAAAAAAAAD/////////////////AAAAAAAAAAAAAP//////////////////AAAAAAAAAAAAAP///////wD/////////AAAAAAAAAAAA/////////wD/////////AAAAAAAAAAD/////////AAD/////////AAAAAAAAAAD/////////AAD/////////AAAAAAAAAP////////8AAAD/////////AAAAAAAA//////////8AAAD/////////AAAAAAAA/////////wAAAAD/////////AAAAAAD/////////AAAAAAD/////////AAAAAAD/////////AAAAAAD/////////AAAAAP////////8AAAAAAAD/////////AAAA//////////8AAAAAAAD/////////AAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAA////////////AAAAAAAAAAAAAAAAAAD/////////////AAAAAAAAAAAAAAAAAP//////////////AAAAAAAAAAAAAAAAAP//////////////AAAAAAAAAAAAAAAA////////////////AAAAAAAAAAAAAAD/////////////////AAAAAAAAAAAAAAD/////////////////AAAAAAAAAAAAAP//////////////////AAAAAAAAAAAA/////////wD/////////AAAAAAAAAAAA/////////wD/////////AAAAAAAAAAD/////////AAD/////////AAAAAAAAAP////////8AAAD/////////AAAAAAAAAP////////8AAAD/////////AAAAAAAA/////////wAAAAD/////////AAAAAAD//////////wAAAAD/////////AAAAAAD/////////AAAAAAD/////////AAAAAP//////////AAAAAAD/////////AAAAAP////////8AAAAAAAD/////////AAAA////////////////////////////AAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD/////////AAAAAAAAAAAAAAAAAAAAAAD///////8AAAAAAAAAAAAAAAAAAAB6//////////8pAAAAAAAAAAAAAAAAAAB6//////////8pAAAAAAAAAAAAAAAAAHD///////////8pAAAAAAAAAAAAAAAAZv////////////8pAAAAAAAAAAAAAAAAZv////////////8pAAAAAAAAAAAAAABc//////////////8pAAAAAAAAAAAAAFL///////////////8pAAAAAAAAAAAAAFL///////////////8pAAAAAAAAAAAAR////////3CZ//////8pAAAAAAAAAAA9////////eo////////8pAAAAAAAAAAA9////////eo////////8pAAAAAAAAADP///////+FAI////////8pAAAAAAAAADP///////+FAI////////8pAAAAAAAAKf///////48AAI////////8pAAAAAAAf/////////48AAI////////8pAAAAAAAf////////mQAAAI////////8pAAAAABT///////+jAAAAAI////////8pAAAACv////////+jAAAAAI////////8pAAAACv///////60AAAAAAI////////8pAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////Cv////////////////////////////8KAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAAAAI////////8pAAAAAAAAAAAAAAAAAAD///////////8AAAAAAAAAAAAAAAAAAP////////////8AAAAAAAAAAAAAAAAAAP////////////8AAAAAAAAAAAAAAAAA//////////////8AAAAAAAAAAAAAAAD///////////////8AAAAAAAAAAAAAAAD///////////////8AAAAAAAAAAAAAAP////////////////8AAAAAAAAAAAAA//////////////////8AAAAAAAAAAAAA////////AP////////8AAAAAAAAAAAD/////////AP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAA/////////wAAAP////////8AAAAAAAAA/////////wAAAP////////8AAAAAAAD/////////AAAAAP////////8AAAAAAP////////8AAAAAAP////////8AAAAAAP////////8AAAAAAP////////8AAAAA/////////wAAAAAAAP////////8AAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////v5aWlpaWlpaWlpaWiQAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAB77///////ZAAAAAAAAAAAAAAAAAAAAADp////////ZAAAAAAAAAAAAAAAAAAAAADp////////ZAAAAAAAAAAAAAAAAAAAAADp////////0bS0tLS0tLSFAAAAAAAAAADp///////////////////vw6EAAAAAAADp//////////////////////e3AAAAAADp///////////////////////7zQAAAADp/////////////////////////uYAAAAA0fD8//Xw8PDw8Pb///////////QAAAAAAACw4UQAAAAAAGLh6/////////UeAAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWP//////////AAAAaHgaAAAAAAAAAAAAWP//////////AAB77/+hIwAAAAAAAAA1sP////////l4AJD2////sZY0AAAASJa///////////QAAPT////////EpaWl0P////////////QAtPz/////////////////////////70gAPPf////////////////////////mNwAAACvt/////////////////////9onAAAAAAAbHtj////////////////EHhkAAAAAAAAAAAwPwP//////////qw8LAAAAAAAAAADR/////////////////////////+gAAADR/////////////////////////+gAAADQ/////////////////////////+gAAADR/////////////////////////+gAAADR/////////////////////////+gAAADR////////9tHR0dHR0dHR0dHR0b4AAADQ////////0AAAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAADQ////////0AAAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAADR////////4FVVVVVVVVUnAAAAAAAAAADR//////////////////+mXTsAAAAAAADQ/////////////////////8dJAAAAAADR///////////////////////XWQAAAADR////////////////////////5mkAAABr3f////////////////////////N8AAAAWs///898fHx8fHzn////////////AAAAAEp0dEoAAAAAAABf2f//////////AAAAAAAAAAAAAAAAAAAAT8n/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AAAAAAAAAAAAAAAAAAAAAKL/////////AACYublUAAAAAAAAAAAAh+b/////////AADR///daQAAAAAAAACe7v//////////ALf1////5snJycnJycn1/////////+020fv//////////////////////////+gA////////////////////////////2CMAH+v////////////////////////CGQAAABUXwP///////////////////6sRAAAAAAAACw+S//////////////98DwoAAAAAAAAAAAAECAgINP//CAgICAgEAAAAAAAAAAAABwgICAgICAgICAgICAgICAgo6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////3snJycnJycnJycnJtwAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////YwAAAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////nF1dXV1dXV1FAAAAAAAAAAAA3v/////////////////WZFMAAAAAAAAA3v///////////////////+VeAAAAAABq7f/////////////////////tagAAAAB47///////////////////////83YAAAAAbOj///+pfHx8fLX///////////QAAAAAAGB0dHQoAAAAADKq//////////QAAAAAAAAAAAAAAAAAAAAqn/////////qTAAAAAAAAAAAAAAAAAAAAWP//////////AAAAAAAAAAAAAAAAAAAAWP//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAobkoAAAAAAAAAAAAWP//////////AACw9//OMgAAAAAAAABM1v////////c+AADp////18lGAAAAYMne//////////QAAMj7///////h0dHR5///////////7SwA2P3/////////////////////////6QAAHx/r///////////////////////iHAAAAAAV4f///////////////////9cUAAAAAAAADdX////////////////ADw0AAAAAAAAAAAYICLT///////+eCAgGAAAAAAAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v///////28AAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v////////////////+9AAAAAAAAAAAA3v///////////////////9MAAAAAAAAA3v/////////////////////eAAAAAADp////////////////////////6QAAAAAA3v////////////////////////QAAAAAANP///9ZAAAAAG////////////QAAAAAAAAAAAAAAAAAAABk//////////QAAAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAA3v83AAAAAAAAAAAAWf//////////AADp////QgAAAAAAAABk//////////QAAADp////////ZAAAev////////////QAAPT/////////////////////////6QAA////////////////////////////6QAAAPT////////////////////////eAAAAAAAA3v//////////////////yAAAAAAAAAAAAADI//////////////+9AAAAAAAAAAAAAAAAAACm//////+bAAAAAAAAAAAAAAAA3v////////////////////////QAAAAA3v////////////////////////QAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAA3v////////////////////////QAAAAA3v//////////////////////6QAAAAAA3v///////28AAAAAAAAAAAAAAAAAAAAA3v///////28AAAAAAAAAAAAAAAAAAAAA3v///////28AAAAAAAAAAAAAAAAAAAAA3v///////28AAAAAAAAAAAAAAAAAAAAA3v//////ZAAAAAAAAAAAAAAAAAAAAAAA3v///////////////7EAAAAAAAAAAAAA3v//////////////////yAAAAAAAAAAA3v/////////////////////eAAAAAAAA3v//////////////////////6QAAAAAA3v//////////////////////6QAAAAAAANP/////ZAAAev////////////QAAAAAAADI/04AAAAAAABk//////////QAAAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAAAAAAAAAAAAAAAAAAWf//////////AAAA3v83AAAAAAAAAAAAWf//////////AADp/////04AAAAAAG////////////QAAPT///////////////////////////QA////////////////////////////6QAAAPT////////////////////////eAAAAAADp/////////////////////9MAAAAAAAAA3v//////////////////yAAAAAAAAAAAAADI/////////////7EAAAAAAAAAAAAAAAAAAAAKDw+M///////ADw8NAAAAAAAAAAAAFh6x///////////////iGwAAAAAAAAAjyP//////////////////7SsAAAAAADLV//////////////////////c8AAAAANL///////////////////////y0AAAATuL//////////9ilxP//////954AAABg6////////8SWllUANJax///xiQAAAADp////////tjsAAAAAAAAjh4d1AAAAAIH0////////ZAAAAAAAAAAAAAAAAAAAAPT///////+dKQAAAAAAAAAAAAAAAAAAAPT///////9ZAAAAAAAAAAAAAAAAAAAAAPT///////9ZAAAAAAAAAAAAAAAAAAAAw/z///////9ZAABmw8PDw8PDmQAAAAAA/////////20QgNLp////////9dK3AAAA/////////+rh8//////////////7zQAA/////////////////////////////uYA////////////////+Pb///////////QP////////////7OHhdWLh6//////////////////////iUgAAAAAASeD///////////////////9ZAAAAAAAAAE7/////////tPz///////9ZAAAAAAAAAE7/////////APT///////9ZAAAAAAAAAE3/////////APT///////9YAAAAAAAAAE3/////////APT///////+nLwAAAAAAAE7/////////AHPz////////ZAAAAAAAL6v/////////AADp////////v5ZIAAA7uv//////////AABS6f/////////QpaXI//////////haAAAA3v////////////////////////QAAAAANN3/////////////////////7jkAAAAAACXR///////////////////jKQAAAAAAAAAXxP//////////////zh4aAAAAAAAAAAAACw8Pof///////7YPDAAAAAAAAAAAAAAAAACm////////////yAAAAAAAAAAAAAAAvf/////////////////eAAAAAAAAAADI////////////////////6QAAAAAAANP///////////////////////QAAAAA3v//////////////////////6QAAAADp///////////////////////eAAAAAADp/////////28AAAAAAE7//9MAAAAAAPT/////////ZAAAAAAAAAAAAAAAAAAAAPT///////9ZAAAAAAAAAAAAAAAAAAAAAPT///////9ZAAAAAAAAAAAAAAAAAAAA/////////04AAAAAAAAAAAAAAAAAAAAA/////////04AAAAAAAAAAAAAAAAAAAAA/////////04AAJD///////+9AAAAAAAA/////////06m/////////////9MAAAAA///////////////////////////eAAAA////////////////////////////6QAA////////////////////////////6QAA/////////////28AAG////////////QA//////////9ZAAAAAABk//////////QA/////////04AAAAAAAAAWf///////////////////04AAAAAAAAAWf///////////////////04AAAAAAAAAAE7//////////////////04AAAAAAAAAAE7///////////////////9ZAAAAAAAAWf////////QAAPT///////9ZAAAAAAAAWf////////QAAPT/////////ZAAAAABk//////////QAAADp////////////////////////6QAAAADp////////////////////////6QAAAAAA3v/////////////////////eAAAAAAAAANP//////////////////9MAAAAAAAAAAAAAvf//////////////yAAAAAAAAAAAAAAAALH//////////7EAAAAAAAAAAAAAAAAAAAgICP////////8ICAgAAAAAAAAAAAAAD/////////////////8PAAAAAAAAAAAX////////////////////FwAAAAAAAB///////////////////////wAAAAAAJ///////////////////////2AAAAAAA////////////0dHR0f/////RAAAAAAA2/////////8nJAAAAAMn//8kAAAAAAAD/////////wQAAAAAAAADBwQAAAAAAAEb/////////AAAAAAAAAAAAAAAAAAAAAP////////+yAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAXV1dXQAAAAAAAAAAAP///////5sAZGRk/////2RkZAAAAAAAbP///////2xs/////////////2wAAAAA//////////////////////////90AAAA////////////////////////////fAAA/////////////////////////////4MA/////////////3R0dHR0//////////8A//////////9sbAAAAAAAbP////////8AZP////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP////////+iAP////////8AAAAAAAAAAP////////9VAP////////8AAAAAAAAAAP////////8AAEb///////+5AAAAAAAAAP////////8AAAD/////////AAAAAAAAwf////////8AAAD/////////yckAAADJ/////////zYAAAAu///////////R0dH//////////wAAAAAAJ///////////////////////JwAAAAAAAB////////////////////8fAAAAAAAAAAAX/////////////////xcAAAAAAAAAAAAAD///////////////DwAAAAAAAAAAAAAAAAgICP//////CAgIAAAAAAAAAAAAAAAAAAgI/////////////wgAAAAAAAAAAAAAD/////////////////8PDwAAAAAAAAAX/////////////////////xcAAAAAAB///////////////////////+AAAAAAJ///////////////////////2AAAAAAA////////////0dHR0f/////RAAAAAAA2/////////8nJAAAAAMnJ//8AAAAAAAD//////////wAAAAAAAAAAwcEAAAAAAAD/////////uQAAAAAAAAAAAAAAAAAAAE3/////////AAAAAAAAAAAAAAAAAAAAAP////////+qAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAF1dXV0AAAAAAAAAAP////////8AAGRkZP////9kZAAAAAAAAP////////9sbP///////////2wAAAAAdP////////////////////////90AAAA////////////////////////////fAAA/////////////////////////////4MA/////////////3R0dHR0//////////8A////////////bAAAAAAAbP////////8AZP////////9kAAAAAAAAAP////////+bAP////////8AAAAAAAAAAP//////////AP////////8AAAAAAAAAAP//////////AP////////8AAAAAAAAAAE3/////////AP////////+5AAAAAAAAALn///////9GAD7/////////AAAAAAAAAP////////8AAAD/////////yQAAAAAAyf////////8AAAAu/////////9EAAADR/////////y4AAAAA///////////Y2Nj//////////wAAAAAAH///////////////////////HwAAAAAAABf///////////////////8XAAAAAAAAAAAP/////////////////w8AAAAAAAAAAAAACAj///////////8ICAAAAAAAAAAAAAAAAAUInv////////++CAYAAAAAAAAAAAAMD7b//////////////9UNAAAAAAAAABPM///////////////////hFxYAAAAAG9j///////////////////////QAAAAA3v/////////////////////62M8AAAAq5P///////////+vj///////eAAAAAADp/////////+DJyXJPycnX//WvAAAAADvu////////2VQAAAAAAAAywaAAAAAAAPT////////RSQAAAAAAAAAAAAAAAAAAAPT///////9ZAAAAAAAAAAAAAAAAAAAAVfj//////8Q7AAAAAAAAAAAAAAAAAAAA/////////00AAAAALF1dPQAAAAAAAAAA/////////04APWRkrv//yWRkTwAAAAAA/////////01Hxf//////////31kAAAAA/////////57O/////////////+dlAAAA///////////////////////////ucQAA////////////////////////////9H4A////////////qnR0dHSq//////////QA/////////5lsKgAAAAAqn/////////QA/////////04AAAAAAAAAWP////////ub/////////00AAAAAAAAAII7//////////////////00AAAAAAAAAAE3/////////Tff//////8k+AAAAAAAAAE7/////////APT///////9YAAAAAAAAQM7///////dGAPT////////WTAAAAAAAWP////////QAADTt////////3lcAAABP3P////////QAAADp/////////+XR0dHj////////7SwAAAAj4///////////////////////6QAAAAAAG9j////////////////////iHAAAAAAAABPM/////////////////9cUAAAAAAAAAAAMD7b////////////ADw0AAAAAAAAAAAAAAAUInv////+eCAgGAAAAAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////lpaWlpaWlpaWlpaWlpbs//////////WWAAAAAAAAAAAAAAAAAADQ////////6XsAAAAAAAAAAAAAAAAAAHvp///////aYgAAAAAAAAAAAAAAAAAAAOj///////+5AAAAAAAAAAAAAAAAAAAApff//////8NBAAAAAAAAAAAAAAAAABC0/////////6IAAAAAAAAAAAAAAAAAABf/////////piYAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAAKeP///////+EEAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAABG//////////VtAAAAAAAAAAAAAAAAAABF/////////10AAAAAAAAAAAAAAAAAABBm/////////10AAAAAAAAAAAAAAAAAAF3//////////10AAAAAAAAAAAAAAAAAAF3/////////yEEAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAMJ//////////RQAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP//////////RQAAAAAAAAAAAAAAAABazv//////////RgAAAAAAAAAAAAAAAACL////////////RQAAAAAAAAAAAAAAAACL//////////9fEAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAA3v////////////////+9AAAAAAAA//////////////////////////////////////////////////////////////QA//////////////////////////////QA//////////////////////////////////////////////////////////////QAAPT///////////////////////////QAAAAAAAAAAAAAAAAAAABk////////6QAAAAAAAAAAAAAAAAAAAG/////////eAAAAAAAAAAAAAAAAAAAAAG/////////eAAAAAAAAAAAAAAAAAAAAev///////9MAAAAAAAAAAAAAAAAAAAAAev//////yAAAAAAAAAAAAAAAAAAAAACF////////yAAAAAAAAAAAAAAAAAAAAACF//////+9AAAAAAAAAAAAAAAAAAAAAJD///////+9AAAAAAAAAAAAAAAAAAAAAJD//////7EAAAAAAAAAAAAAAAAAAAAAm////////7EAAAAAAAAAAAAAAAAAAAAAm////////7EAAAAAAAAAAAAAAAAAAACm////////pgAAAAAAAAAAAAAAAAAAAACm////////pgAAAAAAAAAAAAAAAAAAAACm////////pgAAAAAAAAAAAAAAAAAAAACm////////pgAAAAAAAAAAAAAAAAAAALH/////////pgAAAAAAAAAAAAAAAAAAALH///////+bAAAAAAAAAAAAAAAAAAAAALH///////+bAAAAAAAAAAAAAAAAAAAAALH///////+bAAAAAAAAAAAAAAAAAAAAALH///////+bAAAAAAAAAAAAAAAAAAAAvf////////+bAAAAAAAAAAAAAAAAAAAAvf////////+bAAAAAAAAAAAAAAAAAAAAvf////////+bAAAAAAAAAAAAAAAAAAAAvf///////5AAAAAAAAAAAAAAAAAAAAAAvf////////+bAAAAAAAAAAAA/////////////////////////////+gA/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////+gAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAOj///////+5AAAAAAAAAAAAAAAAAAAAAOj//////6IAAAAAAAAAAAAAAAAAAAAA/////////6IAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAAAAdP///////xcAAAAAAAAAAAAAAAAAAACL/////////xcAuf///////+gA/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////+gAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAOj///////+5AAAAAAAAAAAAAAAAAAAA/////////6IAAAAAAAAAAAAAAAAAAAAA/////////6IAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAAABf///////90AAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAA////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AAAAAAAAAAAAAAAAAADR/////////+gAAAAAAAAAAAAAAAAAAADR////////0QAAAAAAAAAAAAAAAAAAAOj///////+5AAAAAAAAAAAAAAAAAAAAAOj//////6IAAAAAAAAAAAAAAAAAAAAA/////////6IAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAAABf/////////iwAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAAAALv////////90AAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAABG/////////10AAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAAF3/////////RgAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP//////////RgAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAAAAdP////////8uAAAAAAAAAAAAAAAAAACL//////////8uAAAAAAAAAAAAAAAAAAAAAAAAAAAA/xcAAAAAAAAAAAAAAAAAAAAMDw+r////////qw8LAAAAAAAAAAAAABnO///////////////EHhkAAAAAAAAAJ9r//////////////////9onAAAAAAA35v/////////////////////eAAAAAEjv///////////////////////nRAAAAPT/////////yKWlpaXI////////6QAAAPT///////+6OwAAAABk////////6QAAAPT///////9YAAAAAAA1sP//////6QAAAPT///////9YAAAAAAAAWP//////6QAAAPT///////9YAAAAAAAAWP//////6QAAAPT////////EQQAAAAAAWf//////6QAAAPT/////////0U4AAABGzv//////6QAAADnu/////////93DZlXa///////mNwAAAADp////////////6eb//////9onAAAAAAAb4v//////////////////zhkAAAAAAAAADdX/////////////////xwAAAAAAAAAADdX//////////////////9UNAAAAAAAb4v//////7PL////////////iGwAAACvt///////iUnfS5///////////7SsAPPf//////9VEAAAAXcPa//////////QA/////////04AAAAAAABGzv////////dL////////vDIAAAAAAAAAWf//////////////////QgAAAAAAAAAANLb/////////////////QgAAAAAAAAAAAE7/////////////////pikAAAAAAAAAL6v//////////////////7Y0AAAAAAA7uv////////hp///////////EpaWlpaXI//////////QAS/f/////////////////////////70gAADnu////////////////////////6QAAAAAp4//////////////////////jKQAAAAAAGtj/////////////////zh4aAAAAAAAAAAwPD7b/////////qw8PDAAAAAAAAAAAAAAGCLT///////////++CAYAAAAAAAAAAA3L/////////////////9UNAAAAAAAAFNf////////////////////hFQAAAAAA3v//////////////////////6QAAAAAj4////////+nY2Njn////////7CUAAADp////////41sAAABS4f////////QAAADp////////ZAAAAAAARtn///////QAAADp////////ZAAAAAAAAE7///////QAAADp////////ZAAAAAAAAE3///////QAAADp////////YwAAAAAAAE7///////QAAADp////////l1UpAAAAHon/////96MAAACU8/////////+qXTQklf//////6QAAAAAAhu7//////////7yh///////yjQAAAAAAANP//////////////////+yAAAAAAAAAAHOL4f///////////////9MAAAAAAAAAAABh3f///////////////+hsAAAAAAAAcoPk///////////////////veAAAAAB/8P//////qnS8////////////9YUAAADp//////+fKgA4bKz///////////qTAJT2//////9YAAAAACxkmv//////////APT//////44gAAAAAAAAII7/////////APT//////00AAAAAAAAAAE3/////////svv//////04AAAAAAAAAAE7/////////Rvf//////85AAAAAAAAAAE3/////////APT///////9YAAAAAAAAAE7/////////APT////////cyVcAAAAARtn/////////APT//////////+XR0dHR4f////////YuACXs//////////////////////////QAAAAc4v//////////////////////6x4AAAAAFNf//////////////////9cXFQAAAAAAAA0PwP/////////////ADw0AAAAAAAAAAAAABggICJP//5MICAgGAAAAAAAAAAAAAAAAAACm/////////7EAAAAAAAAAAAAAAAAAvf//////////////yAAAAAAAAAAAAADI/////////////////9MAAAAAAAAAANP////////////////////eAAAAAAAA3v//////////////////////6QAAAADp//////////96AABk////////6QAAAADp////////ZAAAAAAAWf////////QAAADp////////ZAAAAAAAWf////////QAAADp////////ZAAAAAAAAE7///////QAAADp////////ZAAAAAAAAE7///////QAAADp////////ZAAAAAAAWf////////QAAADp/////////28AAAAAWf//////6QAAAAAA3v//////////hQBk////////6QAAAAAA3v/////////////////////eAAAAAAAAANP//////////////////9MAAAAAAAAAAADI////////////////yAAAAAAAAAAAAADI///////////////////eAAAAAAAAANP/////////////////////6QAAAAAA3v////////////////////////QAAADp////////ZAAAAG////////////QAAPT///////9ZAAAAAAAAWf//////////APT//////04AAAAAAAAAAE7/////////APT//////04AAAAAAAAAAE7//////////////////04AAAAAAAAAAE7//////////////////04AAAAAAAAAAE7/////////APT///////9ZAAAAAAAAAE7/////////APT/////////ZAAAAAAAWf//////////APT///////////////////////////QAAADp//////////////////////////QAAAAA3v//////////////////////6QAAAAAAANP//////////////////9MAAAAAAAAAAAAAvf////////////+9AAAAAAAAAAAAAAAADw///////////w8PAAAAAAAAAAAAAB4e////////////////Hh4AAAAAAAAALf////////////////////8tAAAAAAAA////////////////////////AAAAAABL//////////+0tP//////////SwAAAAD/////////paUAAKWl/////////wAAAAD/////////AAAAAAAA/////////wAAAAD/////////AAAAAAAAh////////wAAAAD/////////AAAAAAAAAP///////wAAAAD/////////AAAAAAAAAP///////wAAAAD/////////pQAAAAAApf///////wAAAAD//////////7QAAAAA////////SwAAAAA8///////////DwwDD////////AAAAAAAA/////////////9L///////8tAAAAAAAAHv//////////////////Hh4AAAAAAAAAAA//////////////////8AAAAAAAAAAAAA////////////////////8PAAAAAAAAHv///////+H/////////////HgAAAAAt////////0gDS0v///////////y0AADz////////DAAAAAMPD//////////8AAP////////8AAAAAAAAAtP////////8AWv///////6UAAAAAAAAAAP////////9a/////////wAAAAAAAAAAAJb//////////////////wAAAAAAAAAAAHj/////////eP///////4cAAAAAAAAAAP////////94AP////////+WAAAAAAAAlv////////8AAP//////////paWlpaWl//////////8AAEv//////////////////////////0sAAAA8////////////////////////PAAAAAAALf////////////////////8tAAAAAAAAAB7/////////////////Hh4AAAAAAAAAAAAPDw//////////Dw8PAAAAAAAAAAAAAAAAAAUICAiJ/5MICAgGAAAAAAAAAAAAAAAMD7b////////////ADAAAAAAAAAAAABPM////////////////zBcUAAAAAAAAG9j////////////////////eAAAAAAAj4//////////////////////jIwAAAADp////////49HR0dHj////////7SwAAADp////////ZAAAAABP3P////////QAADvu///////WTAAAAAAAWP////////QAAPT///////9YAAAAAAAAWP////////QAAPT///////9ZAAAAAAAAWf////////QAAKP3//////+QIQAAAAAAWf//////96MAAADp////////nCgAAAAAWP//////6QAAAADp/////////6dkNAAnmv/////yjQAAAACG8f//////////uWyl///////eAAAAAAAAeev/////////////////5ot5AAAAAAAAAG3k////////////////yAAAAAAAAAAAAADI////////////////5INyAAAAAAAAeYvm///////////////////wfwAAAACG8f//////pWy5////////////6QAAAJT2//////+aJwA0ZKf/////////9pQAAPT//////44gAAAAAChdlf////////uiqvv//////00AAAAAAAAAWf///////////////////04AAAAAAAAAG4P//////////////////00AAAAAAAAAAE3//////////////////04AAAAAAAAAAE7//////////////////9lGAAAAAAAARtn/////////Lvb////////hUgAAAABS4f////////YuAPT/////////59jY2Njn//////////QAAB7r////////////////////////6x4AAAAV4f/////////////////////hFQAAAAAADdX//////////////////9UNAAAAAAAAAAYIvv///////////7QICAYAAAAAAAAAAAAWFhb/////////FhYWAAAAAAAAAAAAACz/////////////////LAAAAAAAAAAAQv///////////////////0IAAAAAAABX//////////////////////9XAAAAAAD/////////////////////////bQAAAIP//////////3x8fP///////////wAAAP//////////ZgAAAGb//////////5kAr/////////9QAAAAAABQ//////////8A//////////8AAAAAAAAAOv////////8A/////////yQAAAAAAAAAAP/////////b/////////wAAAAAAAAAAAP///////////////////x0AAAAAAAAAAP////////////////////8AAAAAAAAAM///////////tv////////9JSQAAAABJ////////////AP///////////19fX1//////////////AP//////////////////////////////AHX/////////////////////////////AABf////////////////////////////AAAASf//////////////SUn/////////AAAAADMz/////////zMzAMz/////////AAAAAAAAHR0dHR0dHQAAAP//////////AAAAAAAAAAAAAAAAAAAAAP/////////wAAAAAAAAAAAAAAAAAAAAJP////////8AAAAAAAAAAAAAAAAAAAA6//////////8AAAAAAFBQUAAAAAAAAFD//////////68AAAAAZv///2ZmZgBmZv///////////wAAAAB8/////////3z/////////////gwAAAJL///////////////////////9tAAAAAP///////////////////////1cAAAAAAEJC////////////////////QgAAAAAAAAAALP////////////////8sAAAAAAAAAAAAABYW//////////8WFhYAAAAAAAAAAAAAAAAGCAgInv///5MICAUAAAAAAAAAAAAAAA3L/////////////7YLAAAAAAAAAAAAFNf////////////////CEgAAAAAAAAAc4v//////////////////zhoAAAAAACXs/////////////////////9kiAAAAAPT//////////+XR5//////////kKgAANvb////////cyVcAYOD/////////6QAA/////////9RDAAAAAFTZ////////6QAA/////////00AAAAAAABJ0f//////70MA/////////04AAAAAAAAAWf////////QA/////////00AAAAAAAAAWf////////QA/////////00AAAAAAAAAWP////////QA/////////04AAAAAAAAAWP////////hk/////////5kmAAAAAAAqn/////////////////////+kdHR0dHSq////////////g/r/////////////////////////////APT/////////////////////////////AG/z////////////////////////////AABj7P/////////////FbJn/////////AAAAV2Td////////tWQ9Nrn///////hkAAAAAABJXV1dXV1dMAAAWP////////QAAAAAAAAAAAAAAAAAAAAAWf////////QAAAAAAAAAAAAAAAAAAABFzP////////QAAAAAAAAAAAAAAAAAAABk////////70MAAAAAAKAqAAAAAAAAAFTZ////////6QAAAAAAr/XUNAAAAAAAYOD/////////6QAAAAC/+f//3dHR0dHR5//////////kKgAAAM/7/////////////////////9kiAAAA4P7//////////////////////9MAAAAAF/X/////////////////////zBMAAAAAAA8P4P///////////////7YPDAAAAAAAAAAAB9T///////////+eCAUAAAAAAAAAAAAAAAAADw8P////////Dw8AAAAAAAAAAAAAAAAe//////////////8eHgAAAAAAAAAALS3//////////////////y0AAAAAAAAA//////////////////////8AAAAAAABL//////////////////////9LAAAAAAD//////////6Wlpf//////////WgAAAGn/////////lgAAAJb//////////wAAAP////////+HAAAAAACH/////////wAAAP////////8AAAAAAAAA/////////4cAAP////////8AAAAAAAAAaf////////8Apf////////8AAAAAAAAAAP////////8AS/////////8AAAAAAAAAAP////////8AAP////////8AAAAAAAAAAP/////////DAP/////////SAAAAAAAA0v//////////AP//////////4QAAAADh////////////AA////////////Dw8PD/////////////AADw////////////////////////////AAAA4f//////////////////////////AAAAANL////////////S0v/////////SAAAAAADDw8P////Dw8MAAP////////8AAAAAAAAAAAC0tLQAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAAP////////8AAAAAAAAAAAAAAAAAAAAAaf////////8AAAAAAAAAAAAAAAAAAAAA/////////4cAAAAAAIeHAAAAAAAAAACH/////////wAAAAAAlv//lpaWAAAAlpb/////////aQAAAAAA////////paWl////////////AAAAAAC0//////////////////////9LAAAAAMP//////////////////////zwAAAAAAC3/////////////////////LQAAAAAAAAAeHv////////////////8eAAAAAAAAAAAAAA8P////////////Dw8AAAAAAAAAAAAAAAwPwP//////////qw8LAAAAAAAAAAAAGtj////////////////EFwAAAAAAAAAp4///////////////////0SUAAAAAADnu/////////////////////900AAAAAPT////////////////////////eAAAAWvj////////EpaWlpcz////////pUgAA//////////9YAAAAAEG/////////6QAA/////////6svAAAAAAA1sP//////83MA/////////04AAAAAAAAAWP////////QA/////////00AAAAAAAAAWP////////QA/////////00AAAAAAAAAWf////////ul/////////04AAAAAAAAAGoL//////////////////9VEAAAAAAAARNX////////////////////iUgAAAABS4v//////////HvX/////////7OHh4eHs////////////APT/////////////////////////////AADp////////////////////////////AADN4fr////////////z4er/////////AAAAAK7S8///////6dKAEG3///////3SAAAAAAAAkMPDw8PDZgAAWf////////QAAAAAAAAAAAAAAAAAAAAAWf////////QAAAAAAAAAAAAAAAAAAAAAWf////////QAAAAAAAAAAAAAAAAAAAApnf//////9pAAAAAAAAAAAAAAAAAAADSt////////6QAAAAAAdYeHIwAAAAAAQbv/////////6QAAAAAA3v//sZaWlpaWyP/////////rYAAAAACX8////////////////////+JOAAAAAKz4/////////////////////9IAAAAAADnu////////////////////1TIAAAAAAAAp4////////////////78tIwAAAAAAAAAAGh7O////////////sRUAAAAAAAAAAAAAAAAMDw+r//+BDw8PCgAAAAAAAAAAAAAAAAAABggICJP/iQgICAUAAAAAAAAAAAAAAA0PwP///////////7YPDAAAAAAAAAAAFNf/////////////////zBMAAAAAAAAc4v///////////////////9gbAAAAAADp///////////////////////eAAAAACzt/////////+XR5//////////kKgAAAPT/////////3lcAYMne////////6QAAPvf////////WTAAAAABM1v//////7jsA/////////85AAAAAAAAAWP////////QA/////////04AAAAAAAAAWf////////QA/////////00AAAAAAAAAO8T///////hV/////////00AAAAAAAAAAE3//////////////////5MjAAAAAAAAAE7/////////k/r///////9ZAAAAAAAAJpn/////////APT///////+kdDIAN3R0pP//////////APT//////////7V8uv//////////////AHbz////////////////////////////AABq7f//////////////////////////AAAAXuX////////////FbJn/////////AAAAAFPd/////////7w9AE7/////////AAAAAABJXV1dXV1dXTQAAE3/////////AAAAAAAAAAAAAAAAAAAAO8T///////hVAAAAAAAAAAAAAAAAAAAAWf////////QAAAAAAAAAAAAAAAAAAABJ0f////////QAAAAAAKAqAAAAAAAAAABk////////7jsAAAAAr/XUyT0AAAAAYMne////////6QAAAAC/+f///9/R0dHR5//////////kKgAAAADp///////////////////////eAAAAANb8/////////////////////9gbAAAAABbr////////////////////zBMAAAAAAAAO4P/////////////////ADAAAAAAAAAAABwjJ////////////qQgGAAAAAAAA';
+const MODEL_W=24, MODEL_H=32;
+let MODEL=[];
+function loadModel(){
+  const raw=atob(MODEL_B64); const bytes=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
+  const size=MODEL_W*MODEL_H;
+  for(let i=0;i<MODEL_LABELS.length;i++) MODEL.push({digit:Number(MODEL_LABELS[i]),pix:bytes.slice(i*size,(i+1)*size)});
 }
-
+loadModel();
+let bestand=null,cirkels=[],gevonden=[],ontbrekend=[],excelBlob=null,excelNaam='';
+function status(s){statusEl.textContent=s;}
+function uniekeGetallen(s){return [...new Set((s.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=140))].sort((a,b)=>a-b);}
 function bereken(){
   gevonden=uniekeGetallen(tekst.value);
   const alle=Array.from({length:140},(_,i)=>i+1);
@@ -83,386 +58,115 @@ function bereken(){
   found.classList.remove('hidden');
   found.innerHTML='<b>Unieke nummers herkend ('+gevonden.length+'):</b><br>'+gevonden.join(', ');
   check.classList.remove('hidden');
-  if(cirkels.length){
-    if(gevonden.length===cirkels.length && cirkels.length>=120){
-      check.innerHTML='<div class="good"><b>Controle:</b> '+cirkels.length+' cirkels gevonden en '+gevonden.length+' verschillende nummers herkend.</div>';
-    }else{
-      check.innerHTML='<div class="warn"><b>Controle nodig:</b> '+cirkels.length+' cirkels gevonden, maar '+gevonden.length+' unieke nummers herkend. Een nummer dat niet is gelezen kan daardoor ten onrechte bij ontbrekend staan.</div>';
-    }
+  if(cirkels.length && gevonden.length===cirkels.length){
+    check.innerHTML='<div class="good"><b>Technische controle:</b> '+cirkels.length+' cirkels en '+gevonden.length+' unieke nummers. Geen dubbele uitkomst.</div>';
+  }else if(cirkels.length){
+    check.innerHTML='<div class="warn"><b>Controle nodig:</b> '+cirkels.length+' cirkels gevonden, maar '+gevonden.length+' unieke nummers. De ontbrekende lijst is nog niet betrouwbaar.</div>';
   }
-  maakExcel();
-  excelBtn.classList.remove('hidden');
-  mailBtn.classList.remove('hidden');
+  maakExcel();excelBtn.classList.remove('hidden');mailBtn.classList.remove('hidden');
 }
-
 function maakExcel(){
-  const rows=[
-    ['JdB 1-140 - ontbrekende nummers'],
-    ['Datum',new Date().toLocaleString('nl-NL')],
-    ['Cirkels gevonden',cirkels.length],
-    ['Unieke nummers herkend',gevonden.length],
-    ['Aantal ontbrekende nummers',ontbrekend.length],
-    [],['Ontbrekende nummers']
-  ];
+  const rows=[['JdB 1-140 - ontbrekende nummers'],['Datum',new Date().toLocaleString('nl-NL')],['Cirkels gevonden',cirkels.length],['Unieke nummers herkend',gevonden.length],['Aantal ontbrekende nummers',ontbrekend.length],[],['Ontbrekende nummers']];
   ontbrekend.forEach(n=>rows.push([n]));
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:34}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Ontbrekend');
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:34}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Ontbrekend');
   const bytes=XLSX.write(wb,{bookType:'xlsx',type:'array'});
   excelBlob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   excelNaam='JdB_ontbrekende_nummers_'+new Date().toISOString().slice(0,10)+'.xlsx';
 }
-
 async function laadFoto(){
-  const img=new Image();
-  img.src=URL.createObjectURL(bestand);
-  await new Promise((ok,fout)=>{img.onload=ok;img.onerror=fout});
-  const max=2200;
-  const schaal=Math.min(1,max/img.width);
-  canvas.width=Math.round(img.width*schaal);
-  canvas.height=Math.round(img.height*schaal);
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  URL.revokeObjectURL(img.src);
+  const img=new Image();img.src=URL.createObjectURL(bestand);
+  await new Promise((ok,fout)=>{img.onload=ok;img.onerror=fout;});
+  const max=2200,schaal=Math.min(1,max/img.width);canvas.width=Math.round(img.width*schaal);canvas.height=Math.round(img.height*schaal);ctx.drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(img.src);
 }
-
 function vindCirkels(){
-  // Alleen vorm. Geen kleurtest en geen raster.
-  const scale=Math.min(1,1600/canvas.width);
-  const sw=Math.round(canvas.width*scale), sh=Math.round(canvas.height*scale);
-  const klein=document.createElement('canvas');
-  klein.width=sw; klein.height=sh;
-  klein.getContext('2d').drawImage(canvas,0,0,sw,sh);
-  const src=cv.imread(klein), gray=new cv.Mat(), blur=new cv.Mat(), circles=new cv.Mat();
-  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
-  cv.GaussianBlur(gray,blur,new cv.Size(5,5),1.2);
-  // Ruimer bereik dan versie 9. De onderlinge afstand voorkomt dubbele cirkels.
+  const scale=Math.min(1,1600/canvas.width),sw=Math.round(canvas.width*scale),sh=Math.round(canvas.height*scale);
+  const klein=document.createElement('canvas');klein.width=sw;klein.height=sh;klein.getContext('2d').drawImage(canvas,0,0,sw,sh);
+  const src=cv.imread(klein),gray=new cv.Mat(),blur=new cv.Mat(),circles=new cv.Mat();
+  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);cv.GaussianBlur(gray,blur,new cv.Size(5,5),1.2);
   const minDist=Math.max(45,Math.round(Math.min(sw,sh)/18));
   cv.HoughCircles(blur,circles,cv.HOUGH_GRADIENT,1.2,minDist,100,30,20,70);
-  const raw=[];
-  for(let i=0;i<circles.cols;i++){
-    raw.push({x:circles.data32F[i*3]/scale,y:circles.data32F[i*3+1]/scale,r:circles.data32F[i*3+2]/scale});
-  }
+  const raw=[];for(let i=0;i<circles.cols;i++)raw.push({x:circles.data32F[i*3]/scale,y:circles.data32F[i*3+1]/scale,r:circles.data32F[i*3+2]/scale});
   src.delete();gray.delete();blur.delete();circles.delete();
-  // Extra deduplicatie op geometrie.
-  raw.sort((a,b)=>b.r-a.r);
-  const out=[];
-  for(const c of raw){
-    if(out.every(d=>Math.hypot(c.x-d.x,c.y-d.y)>Math.max(0.75*c.r,0.75*d.r))){out.push(c)}
-  }
+  raw.sort((a,b)=>b.r-a.r);const out=[];
+  for(const c of raw){if(out.every(d=>Math.hypot(c.x-d.x,c.y-d.y)>Math.max(.75*c.r,.75*d.r)))out.push(c);}
   return out;
 }
-
-function groepeerRijen(cs){
-  if(!cs.length)return [];
-  const medR=cs.map(c=>c.r).sort((a,b)=>a-b)[Math.floor(cs.length/2)];
-  const tolerance=Math.max(22,medR*1.45);
-  const sorted=[...cs].sort((a,b)=>a.y-b.y);
-  const rows=[];
-  for(const c of sorted){
-    let best=null,bestDiff=Infinity;
-    for(const row of rows){
-      const cy=row.reduce((s,x)=>s+x.y,0)/row.length;
-      const diff=Math.abs(c.y-cy);
-      if(diff<tolerance && diff<bestDiff){best=row;bestDiff=diff;}
-    }
-    if(best)best.push(c); else rows.push([c]);
-  }
-  rows.forEach(r=>r.sort((a,b)=>a.x-b.x));
-  rows.sort((a,b)=>a[0].y-b[0].y);
-  return rows;
+function getGray(c){
+  const s=Math.max(30,Math.round(c.r*1.02)),x0=Math.max(0,Math.round(c.x-s)),y0=Math.max(0,Math.round(c.y-s)),x1=Math.min(canvas.width,Math.round(c.x+s+1)),y1=Math.min(canvas.height,Math.round(c.y+s+1));
+  const w=x1-x0,h=y1-y0,cc=document.createElement('canvas');cc.width=w;cc.height=h;cc.getContext('2d').drawImage(canvas,x0,y0,w,h,0,0,w,h);
+  const d=cc.getContext('2d').getImageData(0,0,w,h).data,g=new Uint8Array(w*h);
+  for(let i=0,j=0;i<d.length;i+=4,j++)g[j]=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+  return {g,w,h};
 }
-
-function maakRijBeeld(row,threshold){
-  const tileW=150,tileH=150,gap=28,inner=126;
-  const width=(tileW+gap)*row.length-gap;
-  const out=document.createElement('canvas');
-  out.width=width; out.height=tileH;
-  const octx=out.getContext('2d');
-  octx.fillStyle='white'; octx.fillRect(0,0,width,tileH);
-  for(let j=0;j<row.length;j++){
-    const c=row[j];
-    const s=Math.max(8,Math.round(c.r*1.15));
-    const sx=Math.max(0,Math.round(c.x-s));
-    const sy=Math.max(0,Math.round(c.y-s));
-    const sw=Math.min(canvas.width-sx,Math.round(2*s+1));
-    const sh=Math.min(canvas.height-sy,Math.round(2*s+1));
-    const raw=document.createElement('canvas'); raw.width=sw; raw.height=sh;
-    raw.getContext('2d').drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
-    const im=raw.getContext('2d').getImageData(0,0,sw,sh);
-    const cx=sw/2,cy=sh/2,rr=c.r*0.99;
-    for(let p=0;p<im.data.length;p+=4){
-      const px=(p/4)%sw, py=Math.floor((p/4)/sw);
-      if((px-cx)*(px-cx)+(py-cy)*(py-cy)>rr*rr){
-        im.data[p]=im.data[p+1]=im.data[p+2]=255;
-      }else{
-        const lum=.299*im.data[p]+.587*im.data[p+1]+.114*im.data[p+2];
-        // Witte cijfers worden zwart; het donkere cirkelvlak wordt wit.
-        const v=lum>threshold?0:255;
-        im.data[p]=im.data[p+1]=im.data[p+2]=v;
+function otsu(vals){
+  const hist=new Array(256).fill(0);for(const v of vals)hist[v]++;
+  let total=vals.length,sum=0;for(let t=0;t<256;t++)sum+=t*hist[t];
+  let sumB=0,wB=0,best=0,thr=150;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=total-wB;if(!wF)break;sumB+=t*hist[t];const mB=sumB/wB,mF=(sum-sumB)/wF;const v=wB*wF*(mB-mF)*(mB-mF);if(v>best){best=v;thr=t;}}
+  return Math.max(110,Math.min(220,thr));
+}
+function extractGlyphs(c){
+  const q=getGray(c),g=q.g,w=q.w,h=q.h,cx=w/2,cy=h/2,rr=c.r*.92,vals=[];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if((x-cx)*(x-cx)+(y-cy)*(y-cy)<rr*rr)vals.push(g[y*w+x]);
+  const thr=otsu(vals),bw=new Uint8Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=y*w+x;bw[k]=((x-cx)*(x-cx)+(y-cy)*(y-cy)<rr*rr&&g[k]>=thr)?1:0;}
+  const seen=new Uint8Array(w*h),comps=[],qx=new Int32Array(w*h),qy=new Int32Array(w*h);
+  for(let sy=0;sy<h;sy++)for(let sx=0;sx<w;sx++){
+    const start=sy*w+sx;if(!bw[start]||seen[start])continue;
+    let head=0,tail=0,minx=sx,maxx=sx,miny=sy,maxy=sy,area=0;
+    qx[tail]=sx;qy[tail]=sy;tail++;seen[start]=1;
+    while(head<tail){
+      const x=qx[head],y=qy[head];head++;area++;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;const nk=ny*w+nx;
+        if(bw[nk]&&!seen[nk]){seen[nk]=1;qx[tail]=nx;qy[tail]=ny;tail++;}
       }
     }
-    const tile=document.createElement('canvas'); tile.width=inner; tile.height=inner;
-    tile.getContext('2d').putImageData(im,Math.max(0,Math.floor((inner-sw)/2)),Math.max(0,Math.floor((inner-sh)/2)));
-    const x=j*(tileW+gap)+(tileW-inner)/2;
-    const y=(tileH-inner)/2;
-    octx.drawImage(tile,x,y,inner,inner);
+    const cw=maxx-minx+1,ch=maxy-miny+1;
+    if(area>=20&&ch>=10&&ch<=h*.8&&cw<=w*.6)comps.push({x:minx,y:miny,w:cw,h:ch,area});
   }
-  return {canvas:out,tileW,gap};
+  comps.sort((a,b)=>a.x-b.x);
+  return comps;
 }
-
-function voegOCRToe(result,row,startIndex,tileW,gap,candidates){
-  const words=result.data?.words||[];
-  for(const w of words){
-    const t=(w.text||'').trim().replace(/[^0-9]/g,'');
-    if(!/^\d{1,3}$/.test(t))continue;
-    const n=Number(t); if(n<1||n>140)continue;
-    const cx=w.bbox.x0+w.bbox.width/2;
-    let j=Math.round((cx-tileW/2)/(tileW+gap));
-    j=Math.max(0,Math.min(row.length-1,j));
-    const center=j*(tileW+gap)+tileW/2;
-    if(Math.abs(cx-center)>tileW*0.48)continue;
-    const idx=startIndex+j;
-    const conf=Number(w.confidence||0);
-    if(!candidates[idx])candidates[idx]=[];
-    candidates[idx].push({n,conf});
-  }
+function glyphImage(c,comp){
+  const out=document.createElement('canvas');out.width=MODEL_W;out.height=MODEL_H;const oc=out.getContext('2d');
+  oc.fillStyle='#000';oc.fillRect(0,0,MODEL_W,MODEL_H);
+  const q=getGray(c),g=q.g,w=q.w,h=q.h,cx=w/2,cy=h/2,rr=c.r*.92,vals=[];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if((x-cx)*(x-cx)+(y-cy)*(y-cy)<rr*rr)vals.push(g[y*w+x]);
+  const thr=otsu(vals);
+  const src=document.createElement('canvas');src.width=comp.w;src.height=comp.h;const sc=src.getContext('2d');
+  const im=sc.createImageData(comp.w,comp.h);
+  for(let y=0;y<comp.h;y++)for(let x=0;x<comp.w;x++){const v=g[(comp.y+y)*w+comp.x+x]>=thr?255:0;const p=(y*comp.w+x)*4;im.data[p]=im.data[p+1]=im.data[p+2]=v;im.data[p+3]=255;}
+  sc.putImageData(im,0,0);oc.imageSmoothingEnabled=true;oc.drawImage(src,0,0,MODEL_W,MODEL_H);
+  const d=oc.getImageData(0,0,MODEL_W,MODEL_H).data,a=new Uint8Array(MODEL_W*MODEL_H);
+  for(let i=0;i<a.length;i++)a[i]=d[i*4]>100?255:0;return a;
 }
-
-async function maakOCRBeeld(c, threshold=205){
-  const pad=1.25;
-  const s=Math.max(12,Math.round(c.r*pad));
-  const sx=Math.max(0,Math.round(c.x-s));
-  const sy=Math.max(0,Math.round(c.y-s));
-  const sw=Math.min(canvas.width-sx,Math.round(2*s+1));
-  const sh=Math.min(canvas.height-sy,Math.round(2*s+1));
-  const raw=document.createElement('canvas'); raw.width=sw; raw.height=sh;
-  const rc=raw.getContext('2d');
-  rc.drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
-  const im=rc.getImageData(0,0,sw,sh);
-  const cx=sw/2, cy=sh/2, rr=c.r*1.03;
-  for(let p=0;p<im.data.length;p+=4){
-    const px=(p/4)%sw, py=Math.floor((p/4)/sw);
-    const inside=(px-cx)*(px-cx)+(py-cy)*(py-cy)<=rr*rr;
-    if(!inside){
-      im.data[p]=im.data[p+1]=im.data[p+2]=0;
-    }else{
-      const lum=.299*im.data[p]+.587*im.data[p+1]+.114*im.data[p+2];
-      // Witte cijfers zijn licht; het cirkelvlak is donkerder.
-      // Drempel 205 werkt veel beter dan de te lage drempel uit v12.
-      const v=lum>threshold?0:255;
-      im.data[p]=im.data[p+1]=im.data[p+2]=v;
-    }
-  }
-  rc.putImageData(im,0,0);
-  const out=document.createElement('canvas'); out.width=480; out.height=480;
-  const oc=out.getContext('2d'); oc.fillStyle='white'; oc.fillRect(0,0,480,480);
-  oc.drawImage(raw,35,35,410,410);
-  return out;
+function classify(a){
+  let best=null,second=null;
+  for(const m of MODEL){let dist=0;for(let i=0;i<a.length;i++){const d=a[i]-m.pix[i];dist+=d*d;}dist/=a.length;
+    if(best===null||dist<best.dist){second=best;best={digit:m.digit,dist:dist};}else if(second===null||dist<second.dist)second={digit:m.digit,dist:dist};}
+  const margin=second?1-best.dist/(second.dist+1):1;return {digit:best.digit,margin:Math.max(0,margin),dist:best.dist};
 }
-
-function haalNummerUitOCR(r){
-  const txt=(r.data?.text||'').trim();
-  const matches=txt.match(/\d{1,3}/g)||[];
-  const kandidaten=[];
-  const conf0=Number(r.data?.confidence||0);
-  for(const m of matches){
-    const n=Number(m);
-    if(n>=1&&n<=140) kandidaten.push({n,conf:conf0});
-  }
-  if(!kandidaten.length)return null;
-  kandidaten.sort((a,b)=>b.conf-a.conf);
-  return kandidaten[0];
+function herkenCirkel(c){
+  const comps=extractGlyphs(c);if(!comps.length||comps.length>3)return {number:null,confidence:0,reason:'cijferdelen niet betrouwbaar gevonden'};
+  let s='',conf=1;for(const comp of comps){const r=classify(glyphImage(c,comp));s+=r.digit;conf=Math.min(conf,r.margin);}
+  const n=Number(s);if(!Number.isInteger(n)||n<1||n>140)return {number:null,confidence:0,reason:'ongeldig nummer'};return {number:n,confidence:conf};
 }
-
 async function leesEenKeer(){
-  if(!bestand)return;
-  status('Foto voorbereiden...');
-  await laadFoto();
-
-  if(!window.cv||!cv.Mat){
-    status('OpenCV is nog niet geladen. Probeer na enkele seconden opnieuw.');
-    return;
-  }
-
-  const detected=vindCirkels();
-  if(!detected.length){
-    status('Geen ronde cirkels gevonden.');
-    return;
-  }
-
-  status(detected.length+' cirkels gevonden. Nummers uitlezen...');
-
-  const worker=await Tesseract.createWorker('eng',1,{
-    logger:m=>{
-      if(m.status==='recognizing text'){
-        const pct=Math.round((m.progress||0)*100);
-        status('OCR: '+pct+'%');
-      }
-    }
-  });
-  await worker.setParameters({
-    tessedit_char_whitelist:'0123456789',
-    user_defined_dpi:'300',
-    classify_bln_numeric_mode:'1',
-    preserve_interword_spaces:'0'
-  });
-
-  // Per cirkel bewaren we de beste OCR-kandidaat. In de eerste ronde
-  // gebruiken we de snelle, goed werkende instelling uit versie 18.
-  // Alleen wanneer die niets oplevert, doen we extra OCR-pogingen met
-  // andere drempels/segmentatiemodi. Daardoor blijft de app snel.
-  const ordered=[...detected].sort((a,b)=>a.y-b.y || a.x-b.x);
-  const results=new Array(ordered.length).fill(null);
-
-  async function ocrCirkel(c, retry=false){
-    const size=Math.max(80,Math.round(c.r*2.25));
-    const x0=Math.max(0,Math.round(c.x-size/2));
-    const y0=Math.max(0,Math.round(c.y-size/2));
-    const x1=Math.min(canvas.width,x0+size);
-    const y1=Math.min(canvas.height,y0+size);
-    const w=x1-x0,h=y1-y0;
-
-    const cc=document.createElement('canvas');
-    cc.width=w;cc.height=h;
-    cc.getContext('2d').drawImage(canvas,x0,y0,w,h,0,0,w,h);
-    const src=cc.getContext('2d').getImageData(0,0,w,h);
-    const gray=new Uint8Array(w*h);
-    for(let p=0,j=0;p<src.data.length;p+=4,j++){
-      gray[j]=Math.round(.299*src.data[p]+.587*src.data[p+1]+.114*src.data[p+2]);
-    }
-
-    function maakVariant(threshold, invert=false, pad=4){
-      const binary=document.createElement('canvas');
-      binary.width=w; binary.height=h;
-      const bc=binary.getContext('2d');
-      const im=bc.createImageData(w,h);
-      const cx=w/2,cy=h/2,rr=Math.min(w,h)*0.43;
-      for(let yy=0;yy<h;yy++){
-        for(let xx=0;xx<w;xx++){
-          const k=yy*w+xx;
-          const dx=xx-cx,dy=yy-cy;
-          const inside=dx*dx+dy*dy<=rr*rr;
-          let v=inside && gray[k]>=threshold ? 0 : 255;
-          if(invert) v=255-v;
-          const q=k*4;
-          im.data[q]=im.data[q+1]=im.data[q+2]=v; im.data[q+3]=255;
-        }
-      }
-      bc.putImageData(im,0,0);
-      const big=document.createElement('canvas');
-      const scale=4;
-      big.width=w*scale; big.height=h*scale;
-      const bg=big.getContext('2d');
-      bg.imageSmoothingEnabled=false;
-      bg.fillStyle='#fff';bg.fillRect(0,0,big.width,big.height);
-      bg.drawImage(binary,0,0,big.width,big.height);
-      return big;
-    }
-
-    // Snelle eerste poging: witte cijfers -> zwart op wit.
-    const variants=[];
-    if(!retry){
-      variants.push({canvas:maakVariant(205,false), psms:[10,13]});
-    }else{
-      // Beperkte tweede poging: maximaal 4 extra OCR-bewerkingen per moeilijke cirkel.
-      // Zo blijft de app responsief op Android.
-      variants.push({canvas:maakVariant(185,false), psms:[10]});
-      variants.push({canvas:maakVariant(205,false), psms:[13]});
-      variants.push({canvas:maakVariant(185,true), psms:[10]});
-      variants.push({canvas:maakVariant(205,true), psms:[13]});
-    }
-
-    let best=null;
-    for(const v of variants){
-      for(const psm of v.psms){
-        const ocr=await worker.recognize(v.canvas,{config:{tessedit_pageseg_mode:String(psm)}});
-        const raw=(ocr.data.text||'').trim().replace(/[^0-9]/g,'');
-        const conf=Number(ocr.data.confidence||0);
-        if(/^\d{1,3}$/.test(raw)){
-          const n=Number(raw);
-          if(n>=1&&n<=140){
-            const score=conf + (retry?0:5);
-            if(!best || score>best.score) best={n,conf,score};
-          }
-        }
-      }
-    }
-    return best;
-  }
-
-  for(let i=0;i<ordered.length;i++){
-    results[i]=await ocrCirkel(ordered[i],false);
-    if((i+1)%5===0 || i===ordered.length-1) status('OCR: '+(i+1)+' van '+ordered.length+' cirkels verwerkt');
-  }
-
-  // Alleen mislukte cirkels opnieuw lezen met een reeks robuuste instellingen.
-  const retryIdx=[];
-  for(let i=0;i<results.length;i++) if(!results[i]) retryIdx.push(i);
-  if(retryIdx.length){
-    status('Extra OCR voor '+retryIdx.length+' moeilijk leesbare cirkel(s)...');
-    for(let k=0;k<retryIdx.length;k++){
-      const i=retryIdx[k];
-      results[i]=await ocrCirkel(ordered[i],true);
-      status('Extra OCR: '+(k+1)+' van '+retryIdx.length);
-    }
-  }
-
-  await worker.terminate();
-
-  const gelezen=results.filter(Boolean).map(x=>x.n);
-  const unieke=[...new Set(gelezen)].sort((a,b)=>a-b);
-  tekst.value=unieke.join(' ');
-  bereken();
-
-  const duplicateCount=gelezen.length-unieke.length;
-  const failed=results.filter(x=>!x).length;
-  status(detected.length+' cirkels gevonden, '+unieke.length+' unieke nummers herkend.'+
-         (duplicateCount?' '+duplicateCount+' dubbele OCR-resultaten.':'')+
-         (failed?' '+failed+' cirkel(s) niet gelezen.':''));
-
-  found.innerHTML += '<div class="small" style="margin-top:8px">'+
-    'OCR-controle: '+gelezen.length+' geldige lezingen uit '+detected.length+' cirkels.'+
-    (failed?' Niet gelezen: '+failed+'.':' Alle cirkels leverden een nummer op.')+
-    '</div>';
-
-  if(failed || duplicateCount){
-    found.innerHTML += '<div class="warn"><b>Controle nodig:</b> '+
-      (failed?'Er zijn ongelezen cirkels. ':'')+
-      (duplicateCount?'Er zijn dubbele OCR-uitkomsten. ':'')+
-      'Corrigeer de tekst hierboven indien nodig.</div>';
-  }else{
-    found.innerHTML += '<div class="good"><b>Alle '+detected.length+' cirkels hebben een geldig nummer opgeleverd.</b></div>';
-  }
+  if(!bestand)return;try{
+    status('Foto voorbereiden...');await laadFoto();if(!window.cv||!cv.Mat){status('OpenCV is nog niet geladen. Probeer opnieuw.');return;}
+    cirkels=vindCirkels();if(!cirkels.length){status('Geen ronde cirkels gevonden.');return;}
+    const ordered=[...cirkels].sort((a,b)=>a.y-b.y||a.x-b.x),res=[];let onzeker=0;
+    status(ordered.length+' cirkels gevonden. Cijfers herkennen...');
+    for(let i=0;i<ordered.length;i++){const r=herkenCirkel(ordered[i]);res.push(r);if(!r.number||r.confidence<.12)onzeker++;if((i+1)%5===0||i===ordered.length-1)status('Herkenning: '+(i+1)+' van '+ordered.length+' cirkels verwerkt');}
+    const nums=res.map(r=>r.number).filter(Boolean);tekst.value=nums.join(' ');bereken();
+    const dup=nums.length-[...new Set(nums)].length;found.innerHTML+='<div class="small" style="margin-top:8px">Beeldclassificatie: '+nums.length+' geldige lezingen uit '+ordered.length+' cirkels.'+(onzeker?' '+onzeker+' onzekere lezing(en).':' Geen onzekere lezingen.')+'</div>';
+    if(nums.length!==ordered.length||dup||onzeker){found.innerHTML+='<div class="warn"><b>Controle nodig:</b> er is geen 100%-verificatie. Corrigeer de tekst hierboven voordat je de ontbrekende nummers gebruikt.</div>';check.innerHTML='<div class="warn"><b>Niet 100% geverifieerd.</b></div>';}else{found.innerHTML+='<div class="good"><b>Alle cirkels zijn zonder dubbele uitkomst herkend.</b></div>';check.innerHTML='<div class="good"><b>Technische controle geslaagd.</b> Dit betekent niet dat visuele fouten onmogelijk zijn.</div>';}
+  }catch(err){console.error(err);status('Fout: '+(err.message||err));}
 }
-
-foto.addEventListener('change',async e=>{bestand=e.target.files[0];if(!bestand)return;try{await leesEenKeer()}catch(err){console.error(err);status('Fout: '+(err.message||err));}});
-document.getElementById('lees').onclick=()=>leesEenKeer();
-document.getElementById('bereken').onclick=()=>bereken();
-excelBtn.onclick=()=>{if(!excelBlob)maakExcel();const url=URL.createObjectURL(excelBlob);const a=document.createElement('a');a.href=url;a.download=excelNaam;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status('Excelbestand aangemaakt.');};
-
-mailBtn.onclick=async()=>{
-  if(!EMAILJS_PUBLIC_KEY||!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID){
-    mailstatus.textContent='E-mail is nog niet ingesteld. Vul eerst de EmailJS Public Key, Service ID en Template ID in de HTML in.';
-    return;
-  }
-  try{
-    emailjs.init({publicKey:EMAILJS_PUBLIC_KEY});
-    mailstatus.textContent='E-mail wordt verstuurd...';
-    await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
-      subject:'JdB ontbrekende nummers '+new Date().toLocaleDateString('nl-NL'),
-      message:'Overzicht van de ontbrekende nummers uit de JdB-controle.\n\nAantal herkende nummers: '+gevonden.length+'\nAantal ontbrekende nummers: '+ontbrekend.length+'\n\nOntbrekende nummers:\n'+ontbrekend.join('\n'),
-      to_email:'container@jdb-barendrecht.nl',
-      datum:new Date().toLocaleString('nl-NL'),
-      gevonden:gevonden.length,
-      ontbrekend:ontbrekend.length,
-      lijst:ontbrekend.join('\n')
-    });
-    mailstatus.textContent='E-mail is verzonden. Er is geen bijlage meegestuurd.';
-  }catch(err){console.error(err);mailstatus.textContent='E-mail verzenden mislukt: '+(err.text||err.message||err);}
-};
-
-let cvTimer=setInterval(()=>{if(window.cv&&cv.Mat){clearInterval(cvTimer);status('Klaar voor een foto.');}},250);
-</script>
-</body>
-</html>
+foto.addEventListener('change',async e=>{bestand=e.target.files[0];if(bestand)await leesEenKeer();});
+document.getElementById('lees').onclick=()=>leesEenKeer();document.getElementById('bereken').onclick=()=>bereken();
+excelBtn.onclick=()=>{if(!excelBlob)maakExcel();const url=URL.createObjectURL(excelBlob),a=document.createElement('a');a.href=url;a.download=excelNaam;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);status('Excelbestand aangemaakt.');};
+mailBtn.onclick=async()=>{try{emailjs.init({publicKey:EMAILJS_PUBLIC_KEY});mailstatus.textContent='E-mail wordt verstuurd...';await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{subject:'JdB ontbrekende nummers '+new Date().toLocaleDateString('nl-NL'),message:'Overzicht van de ontbrekende nummers uit de JdB-controle.\n\nAantal herkende nummers: '+gevonden.length+'\nAantal ontbrekende nummers: '+ontbrekend.length+'\n\nOntbrekende nummers:\n'+ontbrekend.join('\n'),to_email:'container@jdb-barendrecht.nl',datum:new Date().toLocaleString('nl-NL'),gevonden:gevonden.length,ontbrekend:ontbrekend.length,lijst:ontbrekend.join('\n')});mailstatus.textContent='E-mail is verstuurd naar container@jdb-barendrecht.nl.';}catch(err){console.error(err);mailstatus.textContent='E-mail niet verstuurd: '+(err.text||err.message||err);}};
+</script></body></html>
