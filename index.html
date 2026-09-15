@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB 1–140 – versie 10</title>
+<title>JdB 1–140 – versie 12</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -29,7 +29,7 @@ canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#fff
 <body>
 <main>
 <h2>JdB 1–140</h2>
-<p><strong>Versie 10:</strong> ronde cirkels worden alleen op vorm gevonden. Daarna worden de gevonden cirkels automatisch per rij gegroepeerd. De software zoekt cirkels op vorm en leest daarna de cijfers per cirkel. Er wordt één Tesseract-worker gebruikt, zodat OCR veel sneller is dan steeds een nieuwe OCR-engine starten. Er wordt geen vast 10×10- of 14×10-raster gebruikt.</p>
+<p><strong>Versie 12:</strong> ronde cirkels worden alleen op vorm gevonden. Daarna worden de gevonden cirkels automatisch per rij gegroepeerd. De software zoekt cirkels op vorm en leest daarna de cijfers per cirkel. Er wordt één Tesseract-worker gebruikt, zodat OCR veel sneller is dan steeds een nieuwe OCR-engine starten. Er wordt geen vast 10×10- of 14×10-raster gebruikt.</p>
 <input id="foto" type="file" accept="image/*" capture="environment">
 <canvas id="beeld"></canvas>
 <div id="status">Klaar voor een foto.</div>
@@ -239,95 +239,121 @@ async function leesEenKeer(){
   cirkels=vindCirkels();
   if(!cirkels.length){status('Geen ronde cirkels gevonden.');return;}
 
-  status(cirkels.length+' cirkels gevonden. OCR starten...');
+  // Sorteer uitsluitend voor de interne OCR-contactplaat; we gebruiken geen vast raster.
+  // Dit is dus geen aanname over 10x10 of 14x10 in de originele foto.
+  cirkels.sort((a,b)=>a.y-b.y || a.x-b.x);
+  status(cirkels.length+' cirkels gevonden. OCR-beeld opbouwen...');
 
-  // Belangrijk: één Tesseract-worker voor alle cirkels.
-  // Daardoor hoeven we Tesseract maar één keer te laden; dat is veel sneller
-  // dan voor iedere cirkel een nieuwe OCR-engine starten.
   const worker=await Tesseract.createWorker('eng');
   await worker.setParameters({
     tessedit_char_whitelist:'0123456789',
-    tessedit_pageseg_mode:'10',
+    tessedit_pageseg_mode:'11',
+    preserve_interword_spaces:'1',
     user_defined_dpi:'300'
   });
 
-  const resultaten=[];
+  // Maak één contactplaat van alle afzonderlijk uitgesneden cirkels.
+  // Iedere gevonden cirkel krijgt een eigen OCR-vak. Zo ziet Tesseract grote,
+  // uniforme cijfers in plaats van kleine cijfers verspreid over een foto.
+  const tile=170, gap=18, cols=Math.min(10, Math.max(5, Math.ceil(Math.sqrt(cirkels.length))));
+  const rows=Math.ceil(cirkels.length/cols);
+  const sheet=document.createElement('canvas');
+  sheet.width=cols*tile+(cols-1)*gap;
+  sheet.height=rows*tile+(rows-1)*gap;
+  const sc=sheet.getContext('2d');
+  sc.fillStyle='white';sc.fillRect(0,0,sheet.width,sheet.height);
 
-  function maakCirkelBeeld(c,threshold){
-    const s=Math.max(10,Math.round(c.r*1.18));
+  function maakOCRTile(c){
+    const pad=1.22;
+    const s=Math.max(10,Math.round(c.r*pad));
     const sx=Math.max(0,Math.round(c.x-s));
     const sy=Math.max(0,Math.round(c.y-s));
     const sw=Math.min(canvas.width-sx,Math.round(2*s+1));
     const sh=Math.min(canvas.height-sy,Math.round(2*s+1));
-
-    const raw=document.createElement('canvas');
-    raw.width=sw; raw.height=sh;
-    raw.getContext('2d').drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
-
-    const im=raw.getContext('2d').getImageData(0,0,sw,sh);
-    const cx=sw/2,cy=sh/2,rr=c.r*1.02;
+    const raw=document.createElement('canvas'); raw.width=sw; raw.height=sh;
+    const rc=raw.getContext('2d');
+    rc.drawImage(canvas,sx,sy,sw,sh,0,0,sw,sh);
+    const im=rc.getImageData(0,0,sw,sh);
+    const cx=sw/2, cy=sh/2;
+    const rr=c.r*1.04;
     for(let p=0;p<im.data.length;p+=4){
       const px=(p/4)%sw, py=Math.floor((p/4)/sw);
       if((px-cx)*(px-cx)+(py-cy)*(py-cy)>rr*rr){
-        im.data[p]=im.data[p+1]=im.data[p+2]=0;
+        im.data[p]=im.data[p+1]=im.data[p+2]=255;
       }else{
+        // Grijswaarde-only: detectie en OCR zijn onafhankelijk van de cirkelkleur.
         const lum=.299*im.data[p]+.587*im.data[p+1]+.114*im.data[p+2];
-        // Cijfer = wit, cirkelachtergrond = zwart.
-        const v=lum>threshold?255:0;
+        // zwart cijfer op wit: witte cijfers -> zwart, donker cirkelvlak -> wit
+        const v=lum>155?0:255;
         im.data[p]=im.data[p+1]=im.data[p+2]=v;
       }
     }
-    raw.getContext('2d').putImageData(im,0,0);
-
-    const out=document.createElement('canvas');
-    const target=Math.max(110,Math.round(180));
-    out.width=target;out.height=target;
-    out.getContext('2d').drawImage(raw,0,0,sw,sh,0,0,target,target);
+    rc.putImageData(im,0,0);
+    const out=document.createElement('canvas');out.width=tile;out.height=tile;
+    const oc=out.getContext('2d');oc.fillStyle='white';oc.fillRect(0,0,tile,tile);
+    // Laat een royale witte rand rond het cijfer voor OCR.
+    oc.drawImage(raw,8,8,tile-16,tile-16);
     return out;
   }
 
+  const meta=[];
   for(let i=0;i<cirkels.length;i++){
-    const c=cirkels[i];
-    status('OCR cirkel '+(i+1)+' van '+cirkels.length+'...');
-
-    let beste=null;
-    // Eerste, snelle poging.
-    for(const th of [160]){
-      const pic=maakCirkelBeeld(c,th);
-      const r=await worker.recognize(pic);
-      const raw=(r.data?.text||'').replace(/\D/g,' ').trim();
-      const matches=raw.match(/\d{1,3}/g)||[];
-      for(const m of matches){
-        const n=Number(m);
-        if(n>=1&&n<=140){
-          const conf=Number(r.data?.confidence||0);
-          if(!beste || conf>beste.conf)beste={n,conf};
-        }
-      }
-    }
-
-    // Alleen moeilijke cirkels nogmaals proberen. Dit houdt de snelheid redelijk.
-    if(!beste || beste.conf<60){
-      for(const th of [190,220]){
-        const pic=maakCirkelBeeld(c,th);
-        const r=await worker.recognize(pic);
-        const raw=(r.data?.text||'').replace(/\D/g,' ').trim();
-        const matches=raw.match(/\d{1,3}/g)||[];
-        for(const m of matches){
-          const n=Number(m);
-          if(n>=1&&n<=140){
-            const conf=Number(r.data?.confidence||0);
-            if(!beste || conf>beste.conf)beste={n,conf};
-          }
-        }
-        if(beste && beste.conf>=70)break;
-      }
-    }
-
-    resultaten.push(beste);
+    const rr=Math.floor(i/cols), cc=i%cols;
+    sc.drawImage(maakOCRTile(cirkels[i]),cc*(tile+gap),rr*(tile+gap));
+    meta.push({index:i,x:cc*(tile+gap),y:rr*(tile+gap)});
   }
 
+  // Eén OCR-bewerking over de hele contactplaat.
+  status('Eén OCR-bewerking uitvoeren...');
+  const ocr=await worker.recognize(sheet);
   await worker.terminate();
+
+  const kandidaten=Array.from({length:cirkels.length},()=>[]);
+  for(const w of (ocr.data?.words||[])){
+    const raw=(w.text||'').trim().replace(/[^0-9]/g,'');
+    if(!/^\d{1,3}$/.test(raw))continue;
+    const n=Number(raw);if(n<1||n>140)continue;
+    const cx=w.bbox.x0+w.bbox.width/2;
+    const cy=w.bbox.y0+w.bbox.height/2;
+    const col=Math.round(cx/(tile+gap)-0.5);
+    const row=Math.round(cy/(tile+gap)-0.5);
+    const idx=row*cols+col;
+    if(idx<0||idx>=cirkels.length)continue;
+    const localX=cx-meta[idx].x, localY=cy-meta[idx].y;
+    if(localX<15||localX>tile-15||localY<15||localY>tile-15)continue;
+    kandidaten[idx].push({n,conf:Number(w.confidence||0),text:raw});
+  }
+
+  // Nog robuuster: als OCR een heel getal als losse cijfers opsplitst,
+  // probeer de woorden binnen hetzelfde vak te combineren.
+  const resultaten=[];
+  for(const list of kandidaten){
+    if(!list.length){resultaten.push(null);continue;}
+    list.sort((a,b)=>b.conf-a.conf);
+    resultaten.push(list[0]);
+  }
+
+  // Tweede, gerichte fallback: alleen niet-herkende vakken worden afzonderlijk
+  // gelezen. Daardoor blijft de normale route één OCR-pass en wordt alleen bij
+  // moeilijke foto's extra werk gedaan.
+  const ontbrekendeIndices=resultaten.map((x,i)=>x? -1:i).filter(i=>i>=0);
+  if(ontbrekendeIndices.length && ontbrekendeIndices.length<=Math.max(20,Math.round(cirkels.length*0.35))){
+    status(ontbrekendeIndices.length+' moeilijke cirkels extra controleren...');
+    const worker2=await Tesseract.createWorker('eng');
+    await worker2.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10',user_defined_dpi:'300'});
+    for(let k=0;k<ontbrekendeIndices.length;k++){
+      const i=ontbrekendeIndices[k];
+      status('Controle '+(k+1)+' van '+ontbrekendeIndices.length+'...');
+      const pic=maakOCRTile(cirkels[i]);
+      const r=await worker2.recognize(pic);
+      const txt=(r.data?.text||'').replace(/\D/g,' ').trim();
+      const mm=txt.match(/\d{1,3}/g)||[];
+      let best=null;
+      for(const m of mm){const n=Number(m);if(n>=1&&n<=140){const conf=Number(r.data?.confidence||0);if(!best||conf>best.conf)best={n,conf,text:m};}}
+      if(best)resultaten[i]=best;
+    }
+    await worker2.terminate();
+  }
 
   const nums=resultaten.filter(x=>x).map(x=>x.n);
   tekst.value=nums.join(' ');
@@ -339,12 +365,12 @@ async function leesEenKeer(){
 
   found.classList.remove('hidden');
   found.innerHTML +=
-    '<div class="small">Leesresultaten: '+nums.length+' van '+cirkels.length+' cirkels kregen een OCR-resultaat.</div>'+
-    (dubbel.length ? '<div class="warn"><b>Controle:</b> dubbele herkenningen: '+[...new Set(dubbel)].join(', ')+'. Deze cirkels zijn opnieuw te controleren.</div>' : '');
+    '<div class="small">Leesresultaten: '+nums.length+' van '+cirkels.length+' cirkels kregen een OCR-resultaat.</div>'+ 
+    (dubbel.length ? '<div class="warn"><b>Controle:</b> dubbele herkenningen: '+[...new Set(dubbel)].join(', ')+'.</div>' : '');
 
-  if(cirkels.length < 100 || unieke.length < cirkels.length*0.85){
+  if(cirkels.length && unieke.length < cirkels.length){
     check.classList.remove('hidden');
-    check.innerHTML='<div class="warn"><b>Controle nodig:</b> niet alle cirkels zijn betrouwbaar herkend. Een niet gelezen nummer kan daardoor ten onrechte bij ontbrekend staan.</div>';
+    check.innerHTML='<div class="warn"><b>Controle nodig:</b> '+(cirkels.length-unieke.length)+' nummers konden niet betrouwbaar worden onderscheiden van de gevonden cirkels. Gebruik de tekstbox om OCR-fouten handmatig te corrigeren voordat je Excel of e-mail gebruikt.</div>';
   }
 }
 
