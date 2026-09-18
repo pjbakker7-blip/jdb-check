@@ -50,6 +50,12 @@ genegeerd.
 <canvas id="beeld"></canvas>
 
 <div id="status">Klaar voor een foto.</div>
+<div class="small" style="margin-top:8px">
+Nieuwe methode: de app gebruikt de vaste 7×10 nummerindeling van ieder bordpaneel.
+Een lege positie met groene tekst wordt rechtstreeks aan het bijbehorende
+nummer gekoppeld. Daardoor kunnen bijvoorbeeld 17 en 22 worden gevonden,
+ook als OCR moeite heeft met het lichtgroene cijfer.
+</div>
 
 <textarea id="tekst"
 placeholder="Hier verschijnen alleen de groene cijfers die op een witte achtergrond zijn gevonden."></textarea>
@@ -188,135 +194,225 @@ async function laadFoto(){
   Hierdoor worden de witte cijfers IN groene cirkels niet gelezen.
 */
 function vindGroeneTekst(){
+  /*
+    NIEUWE METHODE: de cijfers liggen op vaste nummerposities.
+
+    Het bord heeft twee panelen:
+      rechts:  1 t/m 70   (7 kolommen x 10 rijen)
+      links:  71 t/m 140  (7 kolommen x 10 rijen)
+
+    We bepalen eerst de posities van de cirkels. Daarna kijken we op
+    iedere verwachte positie of er géén cirkel ligt maar wél een klein
+    groen tekstgebied. De nummerwaarde wordt vervolgens uit de
+    rij/kolompositie bepaald; OCR is voor deze selectie dus niet nodig.
+
+    Dit is juist belangrijk voor bijvoorbeeld 17 en 22: hun groene
+    cijfers zijn licht en worden daardoor soms slecht door OCR gelezen,
+    maar hun positie op het bord vertelt ons welk nummer ontbreekt.
+  */
+
   const w=canvas.width, h=canvas.height;
-  const image=ctx.getImageData(0,0,w,h);
-
-  // 1. Maak een masker van alles wat duidelijk groen is.
-  const green=new cv.Mat(h,w,cv.CV_8UC1);
-  for(let p=0,i=0;p<image.data.length;p+=4,i++){
-    const r=image.data[p], g=image.data[p+1], b=image.data[p+2];
-
-    // Ruim genoeg om ook lichtgroene cijfers zoals 17 en 22 te pakken.
-    green.data[i]=(g-r>8 && g-b>8 && g>70) ? 255 : 0;
-  }
-
-  // 2. Detecteer de grote groene cirkels.
+  const src=cv.imread(canvas);
   const gray=new cv.Mat();
   const blur=new cv.Mat();
   const circles=new cv.Mat();
 
-  cv.cvtColor(
-    cv.imread(canvas), gray, cv.COLOR_RGBA2GRAY
-  );
+  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
   cv.GaussianBlur(gray,blur,new cv.Size(5,5),1.2);
 
+  // Vind zowel groene als zwarte cirkels.
   cv.HoughCircles(
     blur,circles,cv.HOUGH_GRADIENT,
-    1.2,45,100,30,20,70
+    1.2,35,100,30,20,70
   );
 
-  // 3. Masker de cirkels inclusief een kleine veiligheidsmarge.
-  // Daardoor worden de witte cijfers IN groene cirkels nooit gelezen.
-  const circleMask=cv.Mat.zeros(h,w,cv.CV_8UC1);
+  const detected=[];
 
   for(let i=0;i<circles.cols;i++){
-    const x=circles.data32F[i*3];
-    const y=circles.data32F[i*3+1];
-    const r=circles.data32F[i*3+2];
+    detected.push({
+      x:circles.data32F[i*3],
+      y:circles.data32F[i*3+1],
+      r:circles.data32F[i*3+2]
+    });
+  }
 
-    cv.circle(
-      circleMask,
-      new cv.Point(Math.round(x),Math.round(y)),
-      Math.round(r*1.12),
-      new cv.Scalar(255),
-      -1
+  // Groepeer een verzameling punten in 7 kolommen of 10 rijen.
+  function centersKMeans(values,k){
+    if(values.length<k)return [];
+    const data=new cv.Mat(values.length,1,cv.CV_32F);
+    for(let i=0;i<values.length;i++)data.floatAt(i,0)=values[i];
+
+    const labels=new cv.Mat();
+    const centers=new cv.Mat();
+
+    const criteria=new cv.TermCriteria(
+      cv.TERM_CRITERIA_EPS+cv.TERM_CRITERIA_MAX_ITER,
+      100,0.2
     );
+
+    cv.kmeans(
+      data,k,labels,criteria,20,
+      cv.KMEANS_PP_CENTERS,centers
+    );
+
+    const out=[];
+    for(let i=0;i<k;i++)out.push(centers.floatAt(i,0));
+    out.sort((a,b)=>a-b);
+
+    data.delete();
+    labels.delete();
+    centers.delete();
+
+    return out;
   }
 
-  // Alles binnen/bij een groene cirkel verwijderen.
-  green.setTo(new cv.Scalar(0),circleMask);
+  /*
+    Eerst links/rechts scheiden. De scheiding wordt afgeleid uit
+    de horizontale verdeling van de gevonden cirkels.
+  */
+  const xs=detected.map(c=>c.x).sort((a,b)=>a-b);
+  const gapList=[];
 
-  // 4. Kleine groene tekstcomponenten zoeken.
-  // Geen harde afstandseis meer: 17 en 22 staan dicht bij de cirkels.
-  const nMat=new cv.Mat();
-  const labels=new cv.Mat();
-  const stats=new cv.Mat();
-  const cents=new cv.Mat();
-
-  const n=cv.connectedComponentsWithStats(
-    green,labels,stats,cents,8,cv.CV_32S
-  );
-
-  const parts=[];
-
-  for(let i=1;i<n;i++){
-    const x=stats.intAt(i,cv.CC_STAT_LEFT);
-    const y=stats.intAt(i,cv.CC_STAT_TOP);
-    const cw=stats.intAt(i,cv.CC_STAT_WIDTH);
-    const ch=stats.intAt(i,cv.CC_STAT_HEIGHT);
-    const area=stats.intAt(i,cv.CC_STAT_AREA);
-
-    // Dit sluit grote cirkelresten en heel kleine ruis uit.
-    if(ch<15 || ch>42) continue;
-    if(cw<4 || cw>25) continue;
-    if(area<45 || area>450) continue;
-
-    parts.push({x,y,w:cw,h:ch,area});
+  for(let i=1;i<xs.length;i++){
+    gapList.push({
+      gap:xs[i]-xs[i-1],
+      index:i
+    });
   }
 
-  // 5. Twee losse cijfers van één getal samenvoegen.
-  // Voor deze bordindeling staan de cijfers ongeveer naast elkaar.
-  parts.sort((a,b)=>a.y-b.y || a.x-b.x);
+  gapList.sort((a,b)=>b.gap-a.gap);
 
-  const groups=[];
+  // Grootste normale scheiding tussen de twee panelen.
+  let splitX=canvas.width*0.5;
+  if(gapList.length){
+    const g=gapList[0];
+    if(g.gap>canvas.width*0.08){
+      splitX=(xs[g.index-1]+xs[g.index])/2;
+    }
+  }
 
-  for(const c of parts){
-    let toegevoegd=false;
+  const panels=[
+    {
+      name:'left',
+      circles:detected.filter(c=>c.x<splitX),
+      firstNumber:71
+    },
+    {
+      name:'right',
+      circles:detected.filter(c=>c.x>=splitX),
+      firstNumber:1
+    }
+  ];
 
-    for(const g of groups){
-      const cy1=g.y+g.h/2;
-      const cy2=c.y+c.h/2;
-      const sameLine=Math.abs(cy1-cy2)<Math.max(12,g.h*0.55);
-      const gap=c.x-(g.x+g.w);
+  /*
+    Groenmasker voor de uiteindelijke controle:
+    een ontbrekend nummer is klein groen tekstgebied op wit.
+  */
+  const original=cv.imread(canvas);
+  const green=new cv.Mat(h,w,cv.CV_8UC1);
 
-      if(sameLine && gap>=-4 && gap<=16){
-        const x1=Math.min(g.x,c.x);
-        const y1=Math.min(g.y,c.y);
-        const x2=Math.max(g.x+g.w,c.x+c.w);
-        const y2=Math.max(g.y+g.h,c.y+c.h);
+  for(let i=0,p=0;i<original.data.length;i+=4,p++){
+    const r=original.data[i];
+    const g=original.data[i+1];
+    const b=original.data[i+2];
 
-        g.x=x1; g.y=y1; g.w=x2-x1; g.h=y2-y1;
-        g.area+=c.area;
-        toegevoegd=true;
-        break;
+    green.data[p]=(g-r>8 && g-b>8 && g>70)?255:0;
+  }
+
+  const result=[];
+
+  for(const panel of panels){
+    if(panel.circles.length<20)continue;
+
+    const px=centersKMeans(
+      panel.circles.map(c=>c.x),7
+    );
+    const py=centersKMeans(
+      panel.circles.map(c=>c.y),10
+    );
+
+    if(px.length!==7 || py.length!==10)continue;
+
+    /*
+      Gebruik een typische cirkelradius om de centrale zone te bepalen.
+      De verhouding groen in deze zone is:
+        hoog  -> er ligt een groene cirkel
+        laag  -> geen cirkel; mogelijk groen ontbrekend nummer
+    */
+    const radii=panel.circles.map(c=>c.r).sort((a,b)=>a-b);
+    const radius=radii[Math.floor(radii.length/2)];
+
+    for(let row=0;row<10;row++){
+      for(let col=0;col<7;col++){
+        const x=px[col];
+        const y=py[row];
+        const rr=Math.max(15,Math.min(25,radius*0.55));
+
+        let greenCount=0;
+        let darkCount=0;
+        let total=0;
+
+        const xmin=Math.max(0,Math.floor(x-rr));
+        const xmax=Math.min(w-1,Math.ceil(x+rr));
+        const ymin=Math.max(0,Math.floor(y-rr));
+        const ymax=Math.min(h-1,Math.ceil(y+rr));
+
+        for(let yy=ymin;yy<=ymax;yy++){
+          for(let xx=xmin;xx<=xmax;xx++){
+            const dx=xx-x,dy=yy-y;
+            if(dx*dx+dy*dy>rr*rr)continue;
+
+            total++;
+
+            if(green.ucharPtr(yy,xx)[0]>0)greenCount++;
+
+            const q=(yy*w+xx)*4;
+            const r=original.data[q];
+            const g=original.data[q+1];
+            const b=original.data[q+2];
+
+            // Donkere cirkel, zoals nummer 128, telt als bezette positie.
+            if(r<90 && g<90 && b<90)darkCount++;
+          }
+        }
+
+        const greenRatio=total?greenCount/total:0;
+        const darkRatio=total?darkCount/total:0;
+
+        /*
+          Cirkel aanwezig:
+          - groene cirkel vult een groot deel van het centrum, of
+          - zwarte cirkel vult het centrum.
+
+          Geen cirkel:
+          - vrijwel wit centrum,
+          - maar er is aantoonbaar groen tekstmateriaal.
+        */
+        const circlePresent=
+          greenRatio>0.40 || darkRatio>0.35;
+
+        if(!circlePresent && greenRatio>0.015){
+          const number=panel.firstNumber+row*7+col;
+
+          result.push({
+            number,
+            x,y,
+            greenRatio,
+            darkRatio
+          });
+        }
       }
     }
-
-    if(!toegevoegd){
-      groups.push({
-        x:c.x,y:c.y,w:c.w,h:c.h,area:c.area
-      });
-    }
   }
 
-  // 6. Een echte groene nummertekst is normaal minstens 17 px hoog
-  // en maximaal ongeveer 50 px breed na het groeperen.
-  const result=groups.filter(c=>
-    c.h>=16 && c.h<=45 &&
-    c.w>=10 && c.w<=55 &&
-    c.area>=80 && c.area<=900
-  );
-
-  green.delete();
+  src.delete();
   gray.delete();
   blur.delete();
   circles.delete();
-  circleMask.delete();
-  nMat.delete();
-  labels.delete();
-  stats.delete();
-  cents.delete();
+  original.delete();
+  green.delete();
 
+  result.sort((a,b)=>a.number-b.number);
   return result;
 }
 
@@ -393,71 +489,31 @@ async function leesEenKeer(){
     return;
   }
 
-  status('Groene cijfers op witte achtergrond zoeken...');
+  status('Nummerposities op het bord bepalen...');
 
-  kandidaten=vindGroeneTekst();
+  const kandidaten=vindGroeneTekst();
 
-  if(!kandidaten.length){
-    tekst.value='';
-    bereken();
-    status('Geen groene cijfers op een witte achtergrond gevonden.');
-    return;
-  }
+  /*
+    De kandidaten zijn al nummers, omdat de nummerpositie bekend is.
+    Daardoor hoeft OCR 17/22 niet meer te "raden".
+  */
+  const nummers=[...new Set(
+    kandidaten.map(c=>c.number)
+  )].sort((a,b)=>a-b);
 
-  status(kandidaten.length+
-    ' groene tekstgebieden gevonden. OCR uitvoeren...');
-
-  const worker=await Tesseract.createWorker('eng',1,{
-    logger:m=>{
-      if(m.status==='recognizing text'){
-        status(
-          'OCR bezig: '+
-          Math.round((m.progress||0)*100)+'%'
-        );
-      }
-    }
-  });
-
-  await worker.setParameters({
-    tessedit_char_whitelist:'0123456789',
-    user_defined_dpi:'300',
-    classify_bln_numeric_mode:'1',
-    preserve_interword_spaces:'0'
-  });
-
-  const gelezen=[];
-
-  for(let i=0;i<kandidaten.length;i++){
-    const r=await ocrKandidaat(kandidaten[i],worker);
-
-    if(r){
-      gelezen.push(r.n);
-    }
-
-    status(
-      'OCR: '+(i+1)+' van '+kandidaten.length+
-      ' tekstgebieden verwerkt'
-    );
-  }
-
-  await worker.terminate();
-
-  const unieke=[...new Set(gelezen)]
-    .sort((a,b)=>a-b);
-
-  tekst.value=unieke.join(' ');
+  tekst.value=nummers.join(' ');
 
   bereken();
 
   status(
-    'Klaar. Alleen groene cijfers op witte achtergrond '+
-    'zijn gebruikt: '+(unieke.length?unieke.join(', '):'geen')+'.'
+    'Klaar. Groene cijfers op witte achtergrond gevonden: '+
+    (nummers.length?nummers.join(', '):'geen')+'.'
   );
 
   found.innerHTML +=
     '<div class="small" style="margin-top:8px">'+
-    'Gevonden groene tekstgebieden: '+kandidaten.length+
-    '. OCR leverde '+unieke.length+' unieke nummers op.'+
+    'De nummerpositie is gebruikt. Hierdoor worden lichtgroene cijfers '+
+    'zoals 17 en 22 niet afhankelijk van OCR herkend.'+
     '</div>';
 }
 
