@@ -195,301 +195,302 @@ async function laadFoto(){
 */
 function vindGroeneTekst(){
   /*
-    ROBUUSTE METHODE VOOR DIT BORD
+    VASTE BORDINDELING — ROBUUSTE VERSIE
 
-    De kleur is nu juist de belangrijkste informatie:
-      - normale positie: grote groene cirkel
-      - ontbrekende positie: witte achtergrond + klein groen nummer
-      - zwarte cirkel: ook bezet, dus niet ontbrekend
+    Rechts: 1 t/m 70  = 10 rijen x 7 kolommen
+    Links : 71 t/m 140 = 10 rijen x 7 kolommen
 
-    Omdat de nummers vast op hun plaats liggen, hoeft 17 of 22 niet
-    door OCR gelezen te worden. Zodra de lege positie is gevonden,
-    weten we aan de hand van rij/kolom welk nummer daar hoort.
+    We gebruiken NIET de herkenning van het cijfer als eerste stap.
+    De groene cirkels bepalen de 7 kolommen en 10 rijen. Daarna wordt
+    iedere verwachte nummerpositie onderzocht.
 
-    De cirkels worden alleen gebruikt om de 7 x 10 rasterposities
-    automatisch te bepalen.
+    Op een normale positie:
+      - grote groene cirkel = nummer aanwezig
+      - zwarte cirkel        = nummer aanwezig
+
+    Op een ontbrekende positie:
+      - geen grote cirkel
+      - witte achtergrond
+      - klein groen cijfer
+
+    Daardoor kunnen ook lichtgroene cijfers zoals 17 en 22 worden
+    gevonden zonder dat OCR het cijfer hoeft te herkennen.
   */
 
   const w=canvas.width, h=canvas.height;
   const img=cv.imread(canvas);
-  const gray=new cv.Mat();
-  const blur=new cv.Mat();
-  const circles=new cv.Mat();
 
-  cv.cvtColor(img,gray,cv.COLOR_RGBA2GRAY);
-  cv.GaussianBlur(gray,blur,new cv.Size(5,5),1.2);
-
-  /*
-    Hogere param2 voorkomt dat schaduwen, letters en randen als
-    cirkels worden gezien.
-  */
-  cv.HoughCircles(
-    blur,circles,cv.HOUGH_GRADIENT,
-    1.2,35,100,40,20,55
-  );
-
-  const greenMask=new cv.Mat(h,w,cv.CV_8UC1);
+  // ---------- 1. Groenmasker ----------
+  const green=new cv.Mat(h,w,cv.CV_8UC1);
 
   for(let p=0,i=0;p<img.data.length;p+=4,i++){
     const r=img.data[p];
     const g=img.data[p+1];
     const b=img.data[p+2];
 
-    /*
-      Dit is bewust tolerant voor lichtgroen.
-      Een groene letter heeft meer groen dan rood/blauw.
-    */
-    greenMask.data[i]=
-      (g-r>8 && g-b>8 && g>65) ? 255 : 0;
+    // Tolerant voor de verschillende groentinten op de foto.
+    green.data[i]=(g-r>7 && g-b>7 && g>60)?255:0;
+  }
+
+  // Kleine gaatjes in de groene cirkels dichtmaken.
+  const kernel=cv.getStructuringElement(
+    cv.MORPH_ELLIPSE,new cv.Size(7,7)
+  );
+  const greenClosed=new cv.Mat();
+
+  cv.morphologyEx(
+    green,greenClosed,cv.MORPH_CLOSE,kernel
+  );
+
+  kernel.delete();
+
+  // ---------- 2. Grote groene cirkels vinden ----------
+  const labels=new cv.Mat();
+  const stats=new cv.Mat();
+  const cents=new cv.Mat();
+
+  const count=cv.connectedComponentsWithStats(
+    greenClosed,labels,stats,cents,8,cv.CV_32S
+  );
+
+  const circles=[];
+
+  /*
+    Een echte cirkel is een grote component met ongeveer gelijke
+    breedte/hoogte. Kleine groene cijfers vallen hier buiten.
+  */
+  const minArea=Math.max(900,Math.round(w*h*0.00025));
+  const maxArea=Math.round(w*h*0.02);
+
+  for(let i=1;i<count;i++){
+    const area=stats.intAt(i,cv.CC_STAT_AREA);
+    const x=stats.intAt(i,cv.CC_STAT_LEFT);
+    const y=stats.intAt(i,cv.CC_STAT_TOP);
+    const cw=stats.intAt(i,cv.CC_STAT_WIDTH);
+    const ch=stats.intAt(i,cv.CC_STAT_HEIGHT);
+
+    if(area<minArea || area>maxArea)continue;
+
+    const verhouding=cw/Math.max(1,ch);
+
+    if(verhouding<0.65 || verhouding>1.45)continue;
+    if(cw<35 || ch<35)continue;
+
+    circles.push({
+      x:x+cw/2,
+      y:y+ch/2,
+      w:cw,
+      h:ch,
+      area
+    });
   }
 
   /*
-    Alleen cirkels met voldoende groen in het centrum worden gebruikt.
-    Hierdoor verdwijnen foutieve Hough-cirkels op hout, papier en
-    schaduwen.
+    De foto bevat twee panelen. Gebruik de grote horizontale ruimte
+    tussen de panelen om ze te scheiden.
   */
-  const raw=[];
+  circles.sort((a,b)=>a.x-b.x);
 
-  for(let i=0;i<circles.cols;i++){
-    const x=circles.data32F[i*3];
-    const y=circles.data32F[i*3+1];
-    const r=circles.data32F[i*3+2];
+  let splitX=w*0.5;
 
-    if(x<220 || x>w-220 || y<35 || y>h-35)continue;
-
-    const rr=Math.max(12,Math.round(r*0.65));
-    let groen=0, totaal=0;
-
-    const x0=Math.max(0,Math.floor(x-rr));
-    const x1=Math.min(w-1,Math.ceil(x+rr));
-    const y0=Math.max(0,Math.floor(y-rr));
-    const y1=Math.min(h-1,Math.ceil(y+rr));
-
-    for(let yy=y0;yy<=y1;yy++){
-      for(let xx=x0;xx<=x1;xx++){
-        const dx=xx-x,dy=yy-y;
-        if(dx*dx+dy*dy>rr*rr)continue;
-        totaal++;
-        if(greenMask.ucharPtr(yy,xx)[0]>0)groen++;
-      }
-    }
-
-    const ratio=totaal?groen/totaal:0;
-
-    /*
-      Bewaar ook donkere (zwarte) cirkel 128.
-      Een zwarte cirkel heeft weinig groen maar is geometrisch wel
-      een geldige bezette positie.
-    */
-    const darkRatio=(function(){
-      let dark=0,total=0;
-      for(let yy=y0;yy<=y1;yy++){
-        for(let xx=x0;xx<=x1;xx++){
-          const dx=xx-x,dy=yy-y;
-          if(dx*dx+dy*dy>rr*rr)continue;
-          const q=(yy*w+xx)*4;
-          const r0=img.data[q],g0=img.data[q+1],b0=img.data[q+2];
-          total++;
-          if(r0<100 && g0<100 && b0<100)dark++;
-        }
-      }
-      return total?dark/total:0;
-    })();
-
-    if(ratio>0.25 || darkRatio>0.30){
-      raw.push({x,y,r,ratio,darkRatio});
-    }
-  }
-
-  /*
-    Dubbele Hough-resultaten verwijderen. Kleinere onderlinge afstand
-    dan ongeveer een halve cirkel betekent dezelfde fysieke cirkel.
-  */
-  raw.sort((a,b)=>(b.ratio+b.darkRatio)-(a.ratio+a.darkRatio));
-
-  const detected=[];
-
-  for(const c of raw){
-    const dichtbij=detected.some(d=>
-      Math.hypot(c.x-d.x,c.y-d.y) <
-      Math.max(24,Math.min(c.r,d.r)*0.70)
-    );
-
-    if(!dichtbij)detected.push(c);
-  }
-
-  /*
-    Vind de scheiding tussen het linker- en rechterpaneel.
-  */
-  const xs=detected.map(c=>c.x).sort((a,b)=>a-b);
-  let splitX=w*0.50;
-
-  if(xs.length>10){
+  if(circles.length>=20){
     let biggestGap=0;
-    for(let i=1;i<xs.length;i++){
-      const gap=xs[i]-xs[i-1];
+
+    for(let i=1;i<circles.length;i++){
+      const gap=circles[i].x-circles[i-1].x;
+
       if(gap>biggestGap){
         biggestGap=gap;
-        splitX=(xs[i]+xs[i-1])/2;
+        splitX=(circles[i].x+circles[i-1].x)/2;
       }
     }
 
-    // Een extreem grote foutieve buitengap mag niet de scheiding bepalen.
-    if(biggestGap<w*0.08)splitX=w*0.50;
+    /*
+      Alleen accepteren als de scheiding echt veel groter is dan
+      een normale kolomafstand.
+    */
+    if(biggestGap<w*0.10){
+      splitX=w*0.50;
+    }
   }
 
-  function kmeansCenters(values,k){
+  function centers(values,k){
     if(values.length<k)return [];
 
     const data=new cv.Mat(values.length,1,cv.CV_32F);
+
     for(let i=0;i<values.length;i++){
       data.floatPtr(i,0)[0]=values[i];
     }
 
-    const labels=new cv.Mat();
-    const centers=new cv.Mat();
+    const lab=new cv.Mat();
+    const cen=new cv.Mat();
 
     const criteria=new cv.TermCriteria(
       cv.TERM_CRITERIA_EPS+cv.TERM_CRITERIA_MAX_ITER,
-      100,0.2
+      100,0.15
     );
 
     cv.kmeans(
-      data,k,labels,criteria,30,
-      cv.KMEANS_PP_CENTERS,centers
+      data,k,lab,criteria,40,
+      cv.KMEANS_PP_CENTERS,cen
     );
 
     const out=[];
+
     for(let i=0;i<k;i++){
-      out.push(centers.floatAt(i,0));
+      out.push(cen.floatAt(i,0));
     }
 
     out.sort((a,b)=>a-b);
 
     data.delete();
-    labels.delete();
-    centers.delete();
+    lab.delete();
+    cen.delete();
 
     return out;
   }
 
   const panels=[
     {
-      circles:detected.filter(c=>c.x<splitX),
-      firstNumber:71
+      circles:circles.filter(c=>c.x<splitX),
+      first:71
     },
     {
-      circles:detected.filter(c=>c.x>=splitX),
-      firstNumber:1
+      circles:circles.filter(c=>c.x>=splitX),
+      first:1
     }
   ];
 
   const result=[];
 
+  // ---------- 3. Vast 7 x 10 raster bepalen ----------
   for(const panel of panels){
-    if(panel.circles.length<30)continue;
 
-    const px=kmeansCenters(
+    /*
+      Er zijn normaal 70 cirkels per paneel. Ook met meerdere
+      ontbrekende nummers blijven ruim voldoende cirkels over om
+      de 7 kolommen en 10 rijen te bepalen.
+    */
+    if(panel.circles.length<35)continue;
+
+    const xs=centers(
       panel.circles.map(c=>c.x),7
     );
-    const py=kmeansCenters(
+
+    const ys=centers(
       panel.circles.map(c=>c.y),10
     );
 
-    if(px.length!==7 || py.length!==10)continue;
+    if(xs.length!==7 || ys.length!==10)continue;
 
-    /*
-      Controleer eerst of de gevonden rasterafstand logisch is.
-      Dit voorkomt dat een foutieve cirkeldetectie een verkeerd raster
-      oplevert.
-    */
-    const dxs=[];
-    const dys=[];
+    // Typische afstanden controleren.
+    const dx=[];
+    const dy=[];
 
-    for(let i=1;i<px.length;i++)dxs.push(px[i]-px[i-1]);
-    for(let i=1;i<py.length;i++)dys.push(py[i]-py[i-1]);
+    for(let i=1;i<xs.length;i++)dx.push(xs[i]-xs[i-1]);
+    for(let i=1;i<ys.length;i++)dy.push(ys[i]-ys[i-1]);
 
-    const med=(a)=>{
-      const b=[...a].sort((x,y)=>x-y);
+    const median=a=>{
+      const b=[...a].sort((p,q)=>p-q);
       return b[Math.floor(b.length/2)];
     };
 
-    const mdx=med(dxs);
-    const mdy=med(dys);
+    const mdx=median(dx);
+    const mdy=median(dy);
 
-    if(mdx<35 || mdy<35)continue;
+    if(!mdx || !mdy || mdx<25 || mdy<25)continue;
 
-    /*
-      Per rasterpositie meten we de hoeveelheid groen.
-      Een echte groene cirkel heeft veel groen.
-      Een ontbrekend groen nummer op wit heeft weinig groen.
-      17 en 22 vallen in deze tweede categorie.
-    */
+    // ---------- 4. Iedere vaste nummerpositie controleren ----------
     for(let row=0;row<10;row++){
       for(let col=0;col<7;col++){
-        const x=px[col], y=py[row];
 
+        const cx=xs[col];
+        const cy=ys[row];
+
+        /*
+          Meet in een compacte zone rond het verwachte centrum.
+          Dit voorkomt dat een hangertje, rand of naburige cirkel
+          de meting beïnvloedt.
+        */
         const rr=Math.max(
-          12,
-          Math.min(19,Math.min(mdx,mdy)*0.28)
+          10,
+          Math.min(22,Math.min(mdx,mdy)*0.24)
         );
 
-        let green=0;
-        let dark=0;
-        let white=0;
         let total=0;
+        let greenPixels=0;
+        let whitePixels=0;
+        let darkPixels=0;
 
-        const x0=Math.max(0,Math.floor(x-rr));
-        const x1=Math.min(w-1,Math.ceil(x+rr));
-        const y0=Math.max(0,Math.floor(y-rr));
-        const y1=Math.min(h-1,Math.ceil(y+rr));
+        const x0=Math.max(0,Math.floor(cx-rr));
+        const x1=Math.min(w-1,Math.ceil(cx+rr));
+        const y0=Math.max(0,Math.floor(cy-rr));
+        const y1=Math.min(h-1,Math.ceil(cy+rr));
 
-        for(let yy=y0;yy<=y1;yy++){
-          for(let xx=x0;xx<=x1;xx++){
-            const dx=xx-x,dy=yy-y;
-            if(dx*dx+dy*dy>rr*rr)continue;
+        for(let y=y0;y<=y1;y++){
+          for(let x=x0;x<=x1;x++){
+
+            const dx0=x-cx;
+            const dy0=y-cy;
+
+            if(dx0*dx0+dy0*dy0>rr*rr)continue;
 
             total++;
 
-            if(greenMask.ucharPtr(yy,xx)[0]>0)green++;
+            if(green.ucharPtr(y,x)[0]>0){
+              greenPixels++;
+            }
 
-            const q=(yy*w+xx)*4;
-            const r=img.data[q];
-            const g=img.data[q+1];
-            const b=img.data[q+2];
+            const p=(y*w+x)*4;
+            const r=img.data[p];
+            const g=img.data[p+1];
+            const b=img.data[p+2];
 
-            if(r<100 && g<100 && b<100)dark++;
-            if(r>180 && g>180 && b>180)white++;
+            if(r>175 && g>175 && b>175){
+              whitePixels++;
+            }
+
+            if(r<95 && g<95 && b<95){
+              darkPixels++;
+            }
           }
         }
 
-        const greenRatio=green/Math.max(1,total);
-        const darkRatio=dark/Math.max(1,total);
-        const whiteRatio=white/Math.max(1,total);
+        const gr=greenPixels/Math.max(1,total);
+        const wr=whitePixels/Math.max(1,total);
+        const dr=darkPixels/Math.max(1,total);
 
         /*
-          De positie is bezet als er een groene of zwarte cirkel is.
-          Een ontbrekend nummer heeft juist:
-            - veel wit
-            - een klein beetje groen (het groene cijfer)
-            - geen grote groene cirkel
-            - geen zwarte cirkel
+          Grote cirkel:
+            groen >= 40%
+
+          Zwarte cirkel:
+            donker >= 28%
+
+          Ontbrekend:
+            overwegend wit én een kleine maar duidelijke hoeveelheid
+            groen van het cijfer.
+
+          De groene tekst mag dus heel licht zijn. We gebruiken
+          bewust een lage ondergrens van 0.006.
         */
-        const circlePresent=
-          greenRatio>0.40 ||
-          darkRatio>0.28;
+        const bezet=
+          gr>=0.40 ||
+          dr>=0.28;
 
-        const greenTextOnWhite=
-          !circlePresent &&
-          whiteRatio>0.45 &&
-          greenRatio>0.015;
+        const groenOpWit=
+          !bezet &&
+          wr>=0.42 &&
+          gr>=0.006;
 
-        if(greenTextOnWhite){
+        if(groenOpWit){
           result.push({
-            number:panel.firstNumber+row*7+col,
-            x,y,
-            greenRatio,
-            whiteRatio
+            number:panel.first+row*7+col,
+            x:cx,
+            y:cy,
+            greenRatio:gr,
+            whiteRatio:wr
           });
         }
       }
@@ -497,10 +498,11 @@ function vindGroeneTekst(){
   }
 
   img.delete();
-  gray.delete();
-  blur.delete();
-  circles.delete();
-  greenMask.delete();
+  green.delete();
+  greenClosed.delete();
+  labels.delete();
+  stats.delete();
+  cents.delete();
 
   return result.sort((a,b)=>a.number-b.number);
 }
