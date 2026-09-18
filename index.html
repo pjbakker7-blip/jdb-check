@@ -240,7 +240,7 @@ function vindGroeneTekst(){
   function centersKMeans(values,k){
     if(values.length<k)return [];
     const data=new cv.Mat(values.length,1,cv.CV_32F);
-    for(let i=0;i<values.length;i++)data.floatAt(i,0)=values[i];
+    for(let i=0;i<values.length;i++)data.floatPtr(i,0)[0]=values[i];
 
     const labels=new cv.Mat();
     const centers=new cv.Mat();
