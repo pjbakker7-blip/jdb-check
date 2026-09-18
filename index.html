@@ -101,10 +101,11 @@ function uniekeGetallen(s){
 }
 
 function bereken(){
+  // BELANGRIJK:
+  // De groene cijfers op de witte achtergrond zijn juist de
+  // ontbrekende nummers. Dus NIET meer de selectie omdraaien.
   gevonden=uniekeGetallen(tekst.value);
-
-  const alle=Array.from({length:140},(_,i)=>i+1);
-  ontbrekend=alle.filter(n=>!gevonden.includes(n));
+  ontbrekend=[...gevonden];
 
   result.classList.remove('hidden');
   result.innerHTML='<b>Ontbrekend ('+ontbrekend.length+'):</b><br>'+
@@ -113,14 +114,15 @@ function bereken(){
     '</div>';
 
   found.classList.remove('hidden');
-  found.innerHTML='<b>Groene cijfers op witte achtergrond herkend ('+
+  found.innerHTML='<b>Groene cijfers op witte achtergrond gevonden ('+
     gevonden.length+'):</b><br>'+
     (gevonden.length ? gevonden.join(', ') : 'geen');
 
   check.classList.remove('hidden');
   check.innerHTML=
-    '<div class="good"><b>Nieuwe herkenningsmethode actief.</b> '+
-    'Alleen groene tekst buiten de groene cirkels wordt meegenomen.</div>';
+    '<div class="good"><b>Correcte selectie.</b> '+
+    'De groene cijfers op de witte achtergrond worden rechtstreeks als '+
+    'ontbrekende nummers gebruikt. Witte cijfers in groene cirkels worden genegeerd.</div>';
 
   maakExcel();
   excelBtn.classList.remove('hidden');
@@ -131,7 +133,7 @@ function maakExcel(){
   const rows=[
     ['JdB 1-140 - ontbrekende nummers'],
     ['Datum',new Date().toLocaleString('nl-NL')],
-    ['Groene cijfers op witte achtergrond',gevonden.length],
+    ['Groene cijfers op witte achtergrond (ontbrekend)',gevonden.length],
     ['Aantal ontbrekende nummers',ontbrekend.length],
     [],
     ['Ontbrekende nummers']
@@ -524,8 +526,7 @@ mailBtn.onclick=async()=>{
 
         message:
           'Overzicht van de ontbrekende nummers uit de JdB-controle.'+
-          '\n\nGroene cijfers op witte achtergrond: '+
-          gevonden.length+
+          '\n\nDe groene cijfers op een witte achtergrond zijn de ontbrekende nummers.'+
           '\nAantal ontbrekende nummers: '+
           ontbrekend.length+
           '\n\nOntbrekende nummers:\n'+
