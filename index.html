@@ -1,62 +1,3 @@
-
-Oudere berichten worden geladen…
-Vergeet de vorige vraag
-Ik zal de vorige vraag en mijn antwoord daarop buiten beschouwing laten.
-
-Het gaat voor 75% goed het herkennen. Misschien gaat het bepalen beter als je weet dat het linkerdeel bestaat uit 10 rijen van 7 nummers op nummer van links naar rechts en loopt van 71 tot 140 Het rechterdeel van de foto loopt van 1 tot en met 70, 10 rijen van 7, genummerd van links naar rechts.
-
-Ja, die informatie over de vaste nummerindeling is precies wat we nodig hebben. Ik heb de herkenning daarop aangepast.
-
-De HTML weet nu expliciet:
-
-Rechter paneel: 1 t/m 70
-10 rijen
-7 kolommen
-links → rechts oplopend
-Linker paneel: 71 t/m 140
-10 rijen
-7 kolommen
-links → rechts oplopend
-Belangrijk: de app hoeft daardoor 17 of 22 niet meer als tekst te herkennen. Hij bepaalt eerst de vaste posities en kijkt vervolgens of op die positie een grote groene cirkel aanwezig is. Als die ontbreekt en er staat groene tekst op een witte achtergrond, wordt het nummer dat bij die positie hoort als ontbrekend aangemerkt.
-
-Ik heb hiervoor v27 gemaakt:
-
-Dit is naar mijn idee een veel logischere aanpak voor jouw specifieke nummerbord dan steeds proberen de cijfers met OCR te ontcijferen. 
-
-
-jdb-check-v27-vaste-nummerposities.html
-HTML
-Bijlage van gebruiker
-Bepaal de nummers met groene letters
-
-Nagedacht gedurende 13s
-
-De nummers met groene letters op een witte achtergrond zijn:
-
-17 en 22. 
-
-En welke cijfers hebben een zwarte achtergrond
-Het cijfer met een zwarte achtergrond is:
-
-128.
-
-Hoe kan ik deze scanmethode die heel goed werkt, gebruiken in een HTML?
-Ja. De methode die we nu gebruiken is veel geschikter voor jouw bord dan gewone OCR.
-
-Ik heb je vraag daarom doorgezet naar een nieuwe werkomgeving om de bestaande HTML daadwerkelijk aan te passen en met jouw foto te testen. Daarbij moet de HTML deze vaste logica gebruiken:
-
-rechts: 1–70, 10 × 7
-links: 71–140, 10 × 7
-de positie bepaalt welk nummer daar hoort
-groene cirkel + wit cijfer = aanwezig
-zwarte cirkel/achtergrond = bezet, dus niet ontbrekend
-groen cijfer op witte achtergrond = ontbrekend
-de tekstherkenning hoeft dus niet meer te bepalen welk nummer het is; de vaste positie bepaalt dat
-Op jouw testfoto moet dit bijvoorbeeld 17 en 22 als ontbrekend opleveren en 128 als bezet herkennen.
-
-De aangepaste HTML kan daarna gewoon op je GitHub-pagina blijven draaien en vanaf je Android-telefoon de foto maken.
-
-Je hebt op een foto de getallen 1 tot en met 140. Sla de witte getallen over en geef alleen de overblijvende getallen. Vergeet de indeling en vaste posities van de getallen. Maak alleen gebruik van html code
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -431,7 +372,3 @@ scan.addEventListener("click", async () => {
 
 </body>
 </html>
-
-
-
-
