@@ -1,708 +1,437 @@
-<!doctype html>
+
+Oudere berichten worden geladen…
+Vergeet de vorige vraag
+Ik zal de vorige vraag en mijn antwoord daarop buiten beschouwing laten.
+
+Het gaat voor 75% goed het herkennen. Misschien gaat het bepalen beter als je weet dat het linkerdeel bestaat uit 10 rijen van 7 nummers op nummer van links naar rechts en loopt van 71 tot 140 Het rechterdeel van de foto loopt van 1 tot en met 70, 10 rijen van 7, genummerd van links naar rechts.
+
+Ja, die informatie over de vaste nummerindeling is precies wat we nodig hebben. Ik heb de herkenning daarop aangepast.
+
+De HTML weet nu expliciet:
+
+Rechter paneel: 1 t/m 70
+10 rijen
+7 kolommen
+links → rechts oplopend
+Linker paneel: 71 t/m 140
+10 rijen
+7 kolommen
+links → rechts oplopend
+Belangrijk: de app hoeft daardoor 17 of 22 niet meer als tekst te herkennen. Hij bepaalt eerst de vaste posities en kijkt vervolgens of op die positie een grote groene cirkel aanwezig is. Als die ontbreekt en er staat groene tekst op een witte achtergrond, wordt het nummer dat bij die positie hoort als ontbrekend aangemerkt.
+
+Ik heb hiervoor v27 gemaakt:
+
+Dit is naar mijn idee een veel logischere aanpak voor jouw specifieke nummerbord dan steeds proberen de cijfers met OCR te ontcijferen. 
+
+
+jdb-check-v27-vaste-nummerposities.html
+HTML
+Bijlage van gebruiker
+Bepaal de nummers met groene letters
+
+Nagedacht gedurende 13s
+
+De nummers met groene letters op een witte achtergrond zijn:
+
+17 en 22. 
+
+En welke cijfers hebben een zwarte achtergrond
+Het cijfer met een zwarte achtergrond is:
+
+128.
+
+Hoe kan ik deze scanmethode die heel goed werkt, gebruiken in een HTML?
+Ja. De methode die we nu gebruiken is veel geschikter voor jouw bord dan gewone OCR.
+
+Ik heb je vraag daarom doorgezet naar een nieuwe werkomgeving om de bestaande HTML daadwerkelijk aan te passen en met jouw foto te testen. Daarbij moet de HTML deze vaste logica gebruiken:
+
+rechts: 1–70, 10 × 7
+links: 71–140, 10 × 7
+de positie bepaalt welk nummer daar hoort
+groene cirkel + wit cijfer = aanwezig
+zwarte cirkel/achtergrond = bezet, dus niet ontbrekend
+groen cijfer op witte achtergrond = ontbrekend
+de tekstherkenning hoeft dus niet meer te bepalen welk nummer het is; de vaste positie bepaalt dat
+Op jouw testfoto moet dit bijvoorbeeld 17 en 22 als ontbrekend opleveren en 128 als bezet herkennen.
+
+De aangepaste HTML kan daarna gewoon op je GitHub-pagina blijven draaien en vanaf je Android-telefoon de foto maken.
+
+Je hebt op een foto de getallen 1 tot en met 140. Sla de witte getallen over en geef alleen de overblijvende getallen. Vergeet de indeling en vaste posities van de getallen. Maak alleen gebruik van html code
+<!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>JdB Check 1–140 – groene cijfers op wit</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JdB Nummer Scanner</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/opencv.js@1.0.0/opencv.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial,sans-serif;margin:0;padding:14px;background:#f3f3f3;color:#111}
-main{max-width:780px;margin:auto}
-h2{margin:2px 0 8px}
-p{font-size:14px;color:#555;line-height:1.45}
-button,input,textarea{width:100%;font-size:18px;padding:14px;margin-top:9px;border-radius:11px;border:1px solid #aaa}
-button{font-weight:700;border:0;cursor:pointer}
-.black{background:#111;color:#fff}
-.blue{background:#1565c0;color:#fff}
-.green{background:#138a2e;color:#fff}
-.orange{background:#d97706;color:#fff}
-#status,#result,#found,#check{background:#fff;border-radius:11px;padding:12px;margin-top:12px}
-#result{font-size:23px;font-weight:700;line-height:1.55}
-#found{font-size:15px;line-height:1.55}
-textarea{min-height:110px}
-canvas{width:100%;height:auto;border-radius:10px;margin-top:12px;background:#fff}
-.hidden{display:none}
-.small{font-size:13px;color:#666}
-.warn{background:#fff3cd;padding:10px;border-radius:9px;margin-top:10px}
-.good{background:#e8f5e9;padding:10px;border-radius:9px;margin-top:10px}
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f5f5f5;
+}
+
+button {
+    font-size: 18px;
+    padding: 12px 20px;
+    margin: 8px 0;
+}
+
+#preview {
+    max-width: 100%;
+    margin-top: 15px;
+}
+
+#resultaat {
+    font-size: 28px;
+    font-weight: bold;
+    margin-top: 20px;
+}
 </style>
 </head>
 
 <body>
-<main>
-<h2>JdB 1–140</h2>
 
-<p>
-<strong>Nieuwe herkenning:</strong> de app leest nu uitsluitend
-<strong>groene cijfers die op een witte achtergrond staan</strong>.
-Witte cijfers in groene cirkels worden genegeerd. Ook groene randen,
-cirkels en groene afdrukken die bij een bestaande cirkel horen worden
-genegeerd.
-</p>
+<h2>JdB nummer scanner</h2>
 
-<input id="foto" type="file" accept="image/*" capture="environment">
-<canvas id="beeld"></canvas>
+<input
+    type="file"
+    id="foto"
+    accept="image/*"
+    capture="environment"
+>
 
-<div id="status">Klaar voor een foto.</div>
-<div class="small" style="margin-top:8px">
-Nieuwe methode: de app gebruikt de vaste 7×10 nummerindeling van ieder bordpaneel en kijkt naar groen-op-wit in plaats van het cijfer via OCR te raden.
-Een lege positie met groene tekst wordt rechtstreeks aan het bijbehorende
-nummer gekoppeld. Daardoor kunnen bijvoorbeeld 17 en 22 worden gevonden,
-ook als OCR moeite heeft met het lichtgroene cijfer.
-</div>
+<br>
 
-<textarea id="tekst"
-placeholder="Hier verschijnen alleen de groene cijfers die op een witte achtergrond zijn gevonden."></textarea>
+<button id="scan">Scan afbeelding</button>
 
-<button id="lees" class="black">Foto lezen</button>
-<button id="bereken" class="blue">Bereken ontbrekende nummers</button>
+<img id="preview">
 
-<div id="result" class="hidden"></div>
-<div id="found" class="hidden"></div>
-<div id="check" class="hidden"></div>
+<div id="status"></div>
 
-<button id="excel" class="green hidden">Excel downloaden</button>
-<button id="mail" class="orange hidden">Resultaat mailen</button>
-<div id="mailstatus" class="small" style="margin-top:8px"></div>
-</main>
+<div id="resultaat"></div>
+
+<canvas id="canvas" style="display:none"></canvas>
 
 <script>
-const foto=document.getElementById('foto');
-const canvas=document.getElementById('beeld');
-const ctx=canvas.getContext('2d');
-const statusEl=document.getElementById('status');
-const tekst=document.getElementById('tekst');
-const result=document.getElementById('result');
-const found=document.getElementById('found');
-const check=document.getElementById('check');
-const excelBtn=document.getElementById('excel');
-const mailBtn=document.getElementById('mail');
-const mailstatus=document.getElementById('mailstatus');
 
-/* Bestaande EmailJS-instellingen behouden. */
-const EMAILJS_PUBLIC_KEY='m1hQVTUwI0HgGdgmI';
-const EMAILJS_SERVICE_ID='service_7gioqpl';
-const EMAILJS_TEMPLATE_ID='template_t0gb12w';
+const foto = document.getElementById("foto");
+const scan = document.getElementById("scan");
+const preview = document.getElementById("preview");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", {willReadFrequently:true});
 
-let bestand=null;
-let gevonden=[];
-let ontbrekend=[];
-let kandidaten=[];
-let excelBlob=null;
-let excelNaam='';
+foto.addEventListener("change", () => {
 
-function status(s){statusEl.textContent=s}
+    if (!foto.files.length) return;
 
-function uniekeGetallen(s){
-  return [...new Set((s.match(/\d+/g)||[])
-    .map(Number)
-    .filter(n=>n>=1&&n<=140))]
-    .sort((a,b)=>a-b);
-}
+    const file = foto.files[0];
 
-function bereken(){
-  // BELANGRIJK:
-  // De groene cijfers op de witte achtergrond zijn juist de
-  // ontbrekende nummers. Dus NIET meer de selectie omdraaien.
-  gevonden=uniekeGetallen(tekst.value);
-  ontbrekend=[...gevonden];
+    preview.src = URL.createObjectURL(file);
+    preview.onload = () => {
 
-  result.classList.remove('hidden');
-  result.innerHTML='<b>Ontbrekend ('+ontbrekend.length+'):</b><br>'+
-    '<div style="font-size:27px;line-height:1.45">'+
-    (ontbrekend.length ? ontbrekend.map(n=>'&bull; '+n).join('<br>') : 'Geen')+
-    '</div>';
+        canvas.width = preview.naturalWidth;
+        canvas.height = preview.naturalHeight;
 
-  found.classList.remove('hidden');
-  found.innerHTML='<b>Groene cijfers op witte achtergrond gevonden ('+
-    gevonden.length+'):</b><br>'+
-    (gevonden.length ? gevonden.join(', ') : 'geen');
-
-  check.classList.remove('hidden');
-  check.innerHTML=
-    '<div class="good"><b>Correcte selectie.</b> '+
-    'De groene cijfers op de witte achtergrond worden rechtstreeks als '+
-    'ontbrekende nummers gebruikt. Witte cijfers in groene cirkels worden genegeerd.</div>';
-
-  maakExcel();
-  excelBtn.classList.remove('hidden');
-  mailBtn.classList.remove('hidden');
-}
-
-function maakExcel(){
-  const rows=[
-    ['JdB 1-140 - ontbrekende nummers'],
-    ['Datum',new Date().toLocaleString('nl-NL')],
-    ['Groene cijfers op witte achtergrond (ontbrekend)',gevonden.length],
-    ['Aantal ontbrekende nummers',ontbrekend.length],
-    [],
-    ['Ontbrekende nummers']
-  ];
-
-  ontbrekend.forEach(n=>rows.push([n]));
-
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:38}];
-
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Ontbrekend');
-
-  const bytes=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-  excelBlob=new Blob([bytes],{
-    type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  });
-
-  excelNaam='JdB_ontbrekende_nummers_'+
-    new Date().toISOString().slice(0,10)+'.xlsx';
-}
-
-async function laadFoto(){
-  const img=new Image();
-  img.src=URL.createObjectURL(bestand);
-
-  await new Promise((ok,fout)=>{
-    img.onload=ok;
-    img.onerror=fout;
-  });
-
-  const max=2200;
-  const schaal=Math.min(1,max/img.width);
-
-  canvas.width=Math.round(img.width*schaal);
-  canvas.height=Math.round(img.height*schaal);
-
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  URL.revokeObjectURL(img.src);
-}
-
-/*
-  Nieuwe methode.
-
-  1. Zoek pixels die duidelijk groen zijn:
-       G-R > 8 en G-B > 8.
-  2. Grote groene vlakken zijn de groene cirkels.
-  3. Maak daarvan een "verboden gebied".
-  4. Zoek daarna alleen kleine groene tekstvormen buiten die cirkels.
-  5. OCR wordt alleen op die kleine tekstgebieden uitgevoerd.
-
-  Hierdoor worden de witte cijfers IN groene cirkels niet gelezen.
-*/
-function vindGroeneTekst(){
-  /*
-    VASTE BORDINDELING — ROBUUSTE VERSIE
-
-    Rechts: 1 t/m 70  = 10 rijen x 7 kolommen
-    Links : 71 t/m 140 = 10 rijen x 7 kolommen
-
-    We gebruiken NIET de herkenning van het cijfer als eerste stap.
-    De groene cirkels bepalen de 7 kolommen en 10 rijen. Daarna wordt
-    iedere verwachte nummerpositie onderzocht.
-
-    Op een normale positie:
-      - grote groene cirkel = nummer aanwezig
-      - zwarte cirkel        = nummer aanwezig
-
-    Op een ontbrekende positie:
-      - geen grote cirkel
-      - witte achtergrond
-      - klein groen cijfer
-
-    Daardoor kunnen ook lichtgroene cijfers zoals 17 en 22 worden
-    gevonden zonder dat OCR het cijfer hoeft te herkennen.
-  */
-
-  const w=canvas.width, h=canvas.height;
-  const img=cv.imread(canvas);
-
-  // ---------- 1. Groenmasker ----------
-  const green=new cv.Mat(h,w,cv.CV_8UC1);
-
-  for(let p=0,i=0;p<img.data.length;p+=4,i++){
-    const r=img.data[p];
-    const g=img.data[p+1];
-    const b=img.data[p+2];
-
-    // Tolerant voor de verschillende groentinten op de foto.
-    green.data[i]=(g-r>7 && g-b>7 && g>60)?255:0;
-  }
-
-  // Kleine gaatjes in de groene cirkels dichtmaken.
-  const kernel=cv.getStructuringElement(
-    cv.MORPH_ELLIPSE,new cv.Size(7,7)
-  );
-  const greenClosed=new cv.Mat();
-
-  cv.morphologyEx(
-    green,greenClosed,cv.MORPH_CLOSE,kernel
-  );
-
-  kernel.delete();
-
-  // ---------- 2. Grote groene cirkels vinden ----------
-  const labels=new cv.Mat();
-  const stats=new cv.Mat();
-  const cents=new cv.Mat();
-
-  const count=cv.connectedComponentsWithStats(
-    greenClosed,labels,stats,cents,8,cv.CV_32S
-  );
-
-  const circles=[];
-
-  /*
-    Een echte cirkel is een grote component met ongeveer gelijke
-    breedte/hoogte. Kleine groene cijfers vallen hier buiten.
-  */
-  const minArea=Math.max(900,Math.round(w*h*0.00025));
-  const maxArea=Math.round(w*h*0.02);
-
-  for(let i=1;i<count;i++){
-    const area=stats.intAt(i,cv.CC_STAT_AREA);
-    const x=stats.intAt(i,cv.CC_STAT_LEFT);
-    const y=stats.intAt(i,cv.CC_STAT_TOP);
-    const cw=stats.intAt(i,cv.CC_STAT_WIDTH);
-    const ch=stats.intAt(i,cv.CC_STAT_HEIGHT);
-
-    if(area<minArea || area>maxArea)continue;
-
-    const verhouding=cw/Math.max(1,ch);
-
-    if(verhouding<0.65 || verhouding>1.45)continue;
-    if(cw<35 || ch<35)continue;
-
-    circles.push({
-      x:x+cw/2,
-      y:y+ch/2,
-      w:cw,
-      h:ch,
-      area
-    });
-  }
-
-  /*
-    De foto bevat twee panelen. Gebruik de grote horizontale ruimte
-    tussen de panelen om ze te scheiden.
-  */
-  circles.sort((a,b)=>a.x-b.x);
-
-  let splitX=w*0.5;
-
-  if(circles.length>=20){
-    let biggestGap=0;
-
-    for(let i=1;i<circles.length;i++){
-      const gap=circles[i].x-circles[i-1].x;
-
-      if(gap>biggestGap){
-        biggestGap=gap;
-        splitX=(circles[i].x+circles[i-1].x)/2;
-      }
-    }
-
-    /*
-      Alleen accepteren als de scheiding echt veel groter is dan
-      een normale kolomafstand.
-    */
-    if(biggestGap<w*0.10){
-      splitX=w*0.50;
-    }
-  }
-
-  function centers(values,k){
-    if(values.length<k)return [];
-
-    const data=new cv.Mat(values.length,1,cv.CV_32F);
-
-    for(let i=0;i<values.length;i++){
-      data.floatPtr(i,0)[0]=values[i];
-    }
-
-    const lab=new cv.Mat();
-    const cen=new cv.Mat();
-
-    const criteria=new cv.TermCriteria(
-      cv.TERM_CRITERIA_EPS+cv.TERM_CRITERIA_MAX_ITER,
-      100,0.15
-    );
-
-    cv.kmeans(
-      data,k,lab,criteria,40,
-      cv.KMEANS_PP_CENTERS,cen
-    );
-
-    const out=[];
-
-    for(let i=0;i<k;i++){
-      out.push(cen.floatAt(i,0));
-    }
-
-    out.sort((a,b)=>a-b);
-
-    data.delete();
-    lab.delete();
-    cen.delete();
-
-    return out;
-  }
-
-  const panels=[
-    {
-      circles:circles.filter(c=>c.x<splitX),
-      first:71
-    },
-    {
-      circles:circles.filter(c=>c.x>=splitX),
-      first:1
-    }
-  ];
-
-  const result=[];
-
-  // ---------- 3. Vast 7 x 10 raster bepalen ----------
-  for(const panel of panels){
-
-    /*
-      Er zijn normaal 70 cirkels per paneel. Ook met meerdere
-      ontbrekende nummers blijven ruim voldoende cirkels over om
-      de 7 kolommen en 10 rijen te bepalen.
-    */
-    if(panel.circles.length<35)continue;
-
-    const xs=centers(
-      panel.circles.map(c=>c.x),7
-    );
-
-    const ys=centers(
-      panel.circles.map(c=>c.y),10
-    );
-
-    if(xs.length!==7 || ys.length!==10)continue;
-
-    // Typische afstanden controleren.
-    const dx=[];
-    const dy=[];
-
-    for(let i=1;i<xs.length;i++)dx.push(xs[i]-xs[i-1]);
-    for(let i=1;i<ys.length;i++)dy.push(ys[i]-ys[i-1]);
-
-    const median=a=>{
-      const b=[...a].sort((p,q)=>p-q);
-      return b[Math.floor(b.length/2)];
-    };
-
-    const mdx=median(dx);
-    const mdy=median(dy);
-
-    if(!mdx || !mdy || mdx<25 || mdy<25)continue;
-
-    // ---------- 4. Iedere vaste nummerpositie controleren ----------
-    for(let row=0;row<10;row++){
-      for(let col=0;col<7;col++){
-
-        const cx=xs[col];
-        const cy=ys[row];
-
-        /*
-          Meet in een compacte zone rond het verwachte centrum.
-          Dit voorkomt dat een hangertje, rand of naburige cirkel
-          de meting beïnvloedt.
-        */
-        const rr=Math.max(
-          10,
-          Math.min(22,Math.min(mdx,mdy)*0.24)
+        ctx.drawImage(
+            preview,
+            0,
+            0,
+            canvas.width,
+            canvas.height
         );
-
-        let total=0;
-        let greenPixels=0;
-        let whitePixels=0;
-        let darkPixels=0;
-
-        const x0=Math.max(0,Math.floor(cx-rr));
-        const x1=Math.min(w-1,Math.ceil(cx+rr));
-        const y0=Math.max(0,Math.floor(cy-rr));
-        const y1=Math.min(h-1,Math.ceil(cy+rr));
-
-        for(let y=y0;y<=y1;y++){
-          for(let x=x0;x<=x1;x++){
-
-            const dx0=x-cx;
-            const dy0=y-cy;
-
-            if(dx0*dx0+dy0*dy0>rr*rr)continue;
-
-            total++;
-
-            if(green.ucharPtr(y,x)[0]>0){
-              greenPixels++;
-            }
-
-            const p=(y*w+x)*4;
-            const r=img.data[p];
-            const g=img.data[p+1];
-            const b=img.data[p+2];
-
-            if(r>175 && g>175 && b>175){
-              whitePixels++;
-            }
-
-            if(r<95 && g<95 && b<95){
-              darkPixels++;
-            }
-          }
-        }
-
-        const gr=greenPixels/Math.max(1,total);
-        const wr=whitePixels/Math.max(1,total);
-        const dr=darkPixels/Math.max(1,total);
-
-        /*
-          Grote cirkel:
-            groen >= 40%
-
-          Zwarte cirkel:
-            donker >= 28%
-
-          Ontbrekend:
-            overwegend wit én een kleine maar duidelijke hoeveelheid
-            groen van het cijfer.
-
-          De groene tekst mag dus heel licht zijn. We gebruiken
-          bewust een lage ondergrens van 0.006.
-        */
-        const bezet=
-          gr>=0.40 ||
-          dr>=0.28;
-
-        const groenOpWit=
-          !bezet &&
-          wr>=0.42 &&
-          gr>=0.006;
-
-        if(groenOpWit){
-          result.push({
-            number:panel.first+row*7+col,
-            x:cx,
-            y:cy,
-            greenRatio:gr,
-            whiteRatio:wr
-          });
-        }
-      }
-    }
-  }
-
-  img.delete();
-  green.delete();
-  greenClosed.delete();
-  labels.delete();
-  stats.delete();
-  cents.delete();
-
-  return result.sort((a,b)=>a.number-b.number);
-}
-async function ocrKandidaat(c,worker){
-  const pad=Math.max(12,Math.round(c.h*0.55));
-
-  const x0=Math.max(0,c.x-pad);
-  const y0=Math.max(0,c.y-pad);
-  const x1=Math.min(canvas.width,c.x+c.w+pad);
-  const y1=Math.min(canvas.height,c.y+c.h+pad);
-
-  const w=x1-x0, h=y1-y0;
-
-  const crop=document.createElement('canvas');
-  crop.width=w; crop.height=h;
-
-  crop.getContext('2d').drawImage(
-    canvas,x0,y0,w,h,0,0,w,h
-  );
-
-  // Vergroot het kleine groene tekstgebied.
-  const big=document.createElement('canvas');
-  big.width=w*6;
-  big.height=h*6;
-
-  const bc=big.getContext('2d');
-  bc.imageSmoothingEnabled=true;
-  bc.drawImage(crop,0,0,big.width,big.height);
-
-  let beste=null;
-
-  // PSM 6 is belangrijk voor "17" en "22".
-  for(const psm of [6,7,10]){
-    const r=await worker.recognize(
-      big,
-      {config:{
-        tessedit_pageseg_mode:String(psm),
-        tessedit_char_whitelist:'0123456789'
-      }}
-    );
-
-    const raw=(r.data.text||'').trim().replace(/[^0-9]/g,'');
-    const conf=Number(r.data.confidence||0);
-
-    if(/^\d{1,3}$/.test(raw)){
-      const n=Number(raw);
-
-      // Alleen betrouwbare OCR-resultaten accepteren.
-      if(n>=1 && n<=140 && conf>=75){
-        if(!beste || conf>beste.conf){
-          beste={n,conf};
-        }
-      }
-    }
-  }
-
-  return beste;
-}
-
-async function leesEenKeer(){
-  if(!bestand)return;
-
-  result.classList.add('hidden');
-  found.classList.add('hidden');
-  check.classList.add('hidden');
-  excelBtn.classList.add('hidden');
-  mailBtn.classList.add('hidden');
-
-  status('Foto voorbereiden...');
-  await laadFoto();
-
-  if(!window.cv || !cv.Mat){
-    status('OpenCV is nog niet geladen. Wacht even en probeer opnieuw.');
-    return;
-  }
-
-  status('Nummerposities op het bord bepalen...');
-
-  const kandidaten=vindGroeneTekst();
-
-  /*
-    De kandidaten zijn al nummers, omdat de nummerpositie bekend is.
-    Daardoor hoeft OCR 17/22 niet meer te "raden".
-  */
-  const nummers=[...new Set(
-    kandidaten.map(c=>c.number)
-  )].sort((a,b)=>a-b);
-
-  tekst.value=nummers.join(' ');
-
-  bereken();
-
-  status(
-    'Klaar. Groene cijfers op witte achtergrond gevonden: '+
-    (nummers.length?nummers.join(', '):'geen')+'.'
-  );
-
-  found.innerHTML +=
-    '<div class="small" style="margin-top:8px">'+
-    'De nummerpositie is gebruikt. Hierdoor worden lichtgroene cijfers '+
-    'zoals 17 en 22 niet afhankelijk van OCR herkend.'+
-    '</div>';
-}
-
-foto.addEventListener('change',async e=>{
-  bestand=e.target.files[0];
-  if(!bestand)return;
-
-  try{
-    await leesEenKeer();
-  }catch(err){
-    console.error(err);
-    status('Fout: '+(err.message||err));
-  }
+    };
 });
 
-document.getElementById('lees').onclick=()=>{
-  leesEenKeer();
-};
 
-document.getElementById('bereken').onclick=()=>{
-  bereken();
-};
+/*
+==========================================================
+  KLEURBEOORDELING
+==========================================================
 
-excelBtn.onclick=()=>{
-  if(!excelBlob)maakExcel();
+  We zoeken NIET naar vaste posities.
 
-  const url=URL.createObjectURL(excelBlob);
-  const a=document.createElement('a');
+  Voor ieder door OCR gevonden getal bekijken we de pixels
+  rond de letters.
 
-  a.href=url;
-  a.download=excelNaam;
+  WIT:
+      wordt genegeerd
 
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  GROEN:
+      wordt meegenomen
 
-  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  ZWART:
+      wordt genegeerd omdat het geen groen getal is
 
-  status('Excelbestand aangemaakt.');
-};
+  Hierdoor zijn vaste 7 x 10 posities niet nodig.
+==========================================================
+*/
 
-mailBtn.onclick=async()=>{
-  if(!EMAILJS_PUBLIC_KEY ||
-     !EMAILJS_SERVICE_ID ||
-     !EMAILJS_TEMPLATE_ID){
+function pixelKleur(x, y) {
 
-    mailstatus.textContent=
-      'E-mail is niet ingesteld.';
-    return;
-  }
+    if (
+        x < 0 ||
+        y < 0 ||
+        x >= canvas.width ||
+        y >= canvas.height
+    ) {
+        return null;
+    }
 
-  try{
-    emailjs.init({
-      publicKey:EMAILJS_PUBLIC_KEY
-    });
+    const p = ctx.getImageData(x, y, 1, 1).data;
 
-    mailstatus.textContent='E-mail wordt verstuurd...';
+    return {
+        r: p[0],
+        g: p[1],
+        b: p[2]
+    };
+}
 
-    await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      {
-        subject:
-          'JdB ontbrekende nummers '+
-          new Date().toLocaleDateString('nl-NL'),
 
-        message:
-          'Overzicht van de ontbrekende nummers uit de JdB-controle.'+
-          '\n\nDe groene cijfers op een witte achtergrond zijn de ontbrekende nummers.'+
-          '\nAantal ontbrekende nummers: '+
-          ontbrekend.length+
-          '\n\nOntbrekende nummers:\n'+
-          ontbrekend.join('\n'),
+function isGroen(c) {
 
-        to_email:'container@jdb-barendrecht.nl',
-        datum:new Date().toLocaleString('nl-NL'),
-        gevonden:gevonden.length,
-        ontbrekend:ontbrekend.length,
-        lijst:ontbrekend.join('\n')
-      }
+    if (!c) return false;
+
+    /*
+      Groen cijfer:
+      G duidelijk groter dan R en B.
+    */
+
+    return (
+        c.g > 60 &&
+        c.g > c.r * 1.15 &&
+        c.g > c.b * 1.08
+    );
+}
+
+
+function isWit(c) {
+
+    if (!c) return false;
+
+    return (
+        c.r > 175 &&
+        c.g > 175 &&
+        c.b > 175 &&
+        Math.max(c.r,c.g,c.b) -
+        Math.min(c.r,c.g,c.b) < 45
+    );
+}
+
+
+/*
+==========================================================
+  BEPAAL OF HET OCR-VAK EEN GROEN GETAL BEVAT
+==========================================================
+*/
+
+function groenPercentage(bbox) {
+
+    const x0 = Math.max(0, Math.floor(bbox.x0));
+    const y0 = Math.max(0, Math.floor(bbox.y0));
+
+    const x1 = Math.min(
+        canvas.width - 1,
+        Math.ceil(bbox.x1)
     );
 
-    mailstatus.textContent=
-      'E-mail is verzonden.';
+    const y1 = Math.min(
+        canvas.height - 1,
+        Math.ceil(bbox.y1)
+    );
 
-  }catch(err){
-    console.error(err);
-    mailstatus.textContent=
-      'E-mail verzenden mislukt: '+
-      (err.text||err.message||err);
-  }
-};
+    let groen = 0;
+    let gekleurd = 0;
 
-let cvTimer=setInterval(()=>{
-  if(window.cv && cv.Mat){
-    clearInterval(cvTimer);
-    status('Klaar voor een foto.');
-  }
-},250);
+    /*
+      We bekijken alle pixels in het OCR-vak.
+    */
+
+    const image = ctx.getImageData(
+        x0,
+        y0,
+        x1 - x0 + 1,
+        y1 - y0 + 1
+    );
+
+    for (let i = 0; i < image.data.length; i += 4) {
+
+        const c = {
+            r: image.data[i],
+            g: image.data[i+1],
+            b: image.data[i+2]
+        };
+
+        /*
+          Alleen duidelijk gekleurde pixels tellen.
+        */
+
+        if (!isWit(c)) {
+
+            gekleurd++;
+
+            if (isGroen(c)) {
+                groen++;
+            }
+        }
+    }
+
+    if (gekleurd === 0) return 0;
+
+    return groen / gekleurd;
+}
+
+
+/*
+==========================================================
+  OCR
+==========================================================
+*/
+
+scan.addEventListener("click", async () => {
+
+    if (!foto.files.length) {
+
+        alert("Maak eerst een foto.");
+        return;
+    }
+
+    document.getElementById("status").textContent =
+        "Afbeelding wordt gescand...";
+
+    document.getElementById("resultaat").textContent = "";
+
+    try {
+
+        const resultaat = await Tesseract.recognize(
+            preview,
+            "eng",
+            {
+                logger: m => {
+
+                    if (m.status) {
+
+                        document.getElementById("status")
+                            .textContent =
+                            m.status +
+                            " " +
+                            Math.round((m.progress || 0) * 100) +
+                            "%";
+                    }
+                }
+            }
+        );
+
+        const woorden = resultaat.data.words;
+
+        const gevonden = new Set();
+
+        /*
+          We gebruiken uitsluitend getallen 1 t/m 140.
+        */
+
+        for (const woord of woorden) {
+
+            let tekst = woord.text
+                .replace(/[^\d]/g, "");
+
+            if (!tekst) continue;
+
+            const nummer = parseInt(tekst, 10);
+
+            if (
+                nummer < 1 ||
+                nummer > 140
+            ) {
+                continue;
+            }
+
+            /*
+              OCR kan een getal verkeerd lezen.
+              Alleen voldoende duidelijke OCR-resultaten
+              worden meegenomen.
+            */
+
+            if (
+                typeof woord.confidence === "number" &&
+                woord.confidence < 20
+            ) {
+                continue;
+            }
+
+            /*
+              BELANGRIJK:
+
+              Niet de positie bepaalt het nummer.
+
+              We kijken uitsluitend naar de kleur van
+              de letters in het OCR-vak.
+            */
+
+            const groen =
+                groenPercentage(woord.bbox);
+
+            /*
+              Een groen getal heeft doorgaans een duidelijk
+              aandeel groene pixels.
+
+              De drempel is bewust laag omdat 17 en 22 op
+              de voorbeeldfoto lichtgroen zijn.
+            */
+
+            if (groen >= 0.08) {
+
+                gevonden.add(nummer);
+            }
+        }
+
+
+        /*
+        ==================================================
+          RESULTAAT
+        ==================================================
+        */
+
+        const lijst =
+            [...gevonden]
+            .filter(n => n >= 1 && n <= 140)
+            .sort((a,b) => a-b);
+
+        if (lijst.length === 0) {
+
+            document.getElementById("resultaat")
+                .textContent =
+                "Geen groene nummers gevonden.";
+
+        } else {
+
+            document.getElementById("resultaat")
+                .textContent =
+                "Groene nummers: " +
+                lijst.join(", ");
+        }
+
+        document.getElementById("status")
+            .textContent =
+            "Scan gereed.";
+
+    } catch (error) {
+
+        console.error(error);
+
+        document.getElementById("status")
+            .textContent =
+            "Fout tijdens het scannen.";
+    }
+});
+
 </script>
+
 </body>
 </html>
+
+
+
+
